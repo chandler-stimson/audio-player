@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Audio Player</title>
+  <link rel="stylesheet" type="text/css" href="sandbox.css">
+</head>
+<body>
+  <audio controls id="dummy" src="silence.mp3" loop></audio>
+  <div id="meta">
+    <span>Codec Name</span>
+    <span id="codec-name">-</span>
+    <span>Sample Rate</span>
+    <span id="sample-rate">-</span>
+    <span>Sample Size</span>
+    <span id="sample-size">-</span>
+    <span>LIBAVCODEC Version</span>
+    <span id="avcodec-version">-</span>
+    <span>LIBAVFORMAT Version</span>
+    <span id="avformat-version">-</span>
+  </div>
+  <span id="flex"></span>
+  <audio-view id="audio" tabindex="0">
+    <svg width="24" id="next" disabled="true" slot="before-stat" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 36l17-12-17-12v24zm20-24v24h4V12h-4z"/><path d="M0 0h48v48H0z" fill="none"/>
+    </svg>
+    <svg width="24" id="previous" disabled="true" slot="before-play" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 12h4v24h-4zm7 12l17 12V12z"/><path d="M0 0h48v48H0z" fill="none"/>
+    </svg>
+  </audio-view>
+
+  <script type="text/javascript" src="components/progress-view.js"></script>
+  <script type="text/javascript" src="components/audio-view.js"></script>
+  <script type="text/javascript" src="sandbox.js"></script>
+  <script type="text/javascript" src="session.js"></script>
+  <script type="text/javascript" src="decoder/decoder.js"></script>
+</body>
+</html>

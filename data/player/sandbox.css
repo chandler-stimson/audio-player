@@ -1,0 +1,39 @@
+body {
+  font-size: 13px;
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100vh;
+  margin: 0;
+}
+audio-view {
+  outline: none;
+  width: 100%;
+
+  --bg-color: #fff;
+}
+
+#dummy {
+  display: none;
+}
+#meta {
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  grid-gap: 10px;
+  white-space: nowrap;
+  margin: 10px;
+}
+@media screen and (max-height: 200px) {
+  #meta {
+    display: none;
+  }
+}
+#flex {
+  flex: 1;
+}
+
+[disabled=true] {
+  opacity: 0.2;
+  pointer-events: none;
+}
