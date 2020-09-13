@@ -18,9 +18,9 @@ chrome.browserAction.onClicked.addListener(() => {
   }
   else {
     chrome.storage.local.get({
-      width: 600,
+      width: 500,
       height: 80,
-      left: screen.availLeft + Math.round((screen.availWidth - 600) / 2),
+      left: screen.availLeft + Math.round((screen.availWidth - 500) / 2),
       top: screen.availTop + Math.round((screen.availHeight - 80) / 2)
     }, prefs => {
       chrome.windows.create({

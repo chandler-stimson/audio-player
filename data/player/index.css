@@ -1,0 +1,56 @@
+body {
+  font-size: 13px;
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100vh;
+  margin: 0;
+  background-color: #fff;
+  color: #4d5156
+}
+audio-view {
+  outline: none;
+  width: 100%;
+
+  --bg-color: transparent;
+}
+
+#dummy {
+  display: none;
+}
+#meta {
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  grid-gap: 10px;
+  white-space: nowrap;
+  margin: 10px;
+}
+@media screen and (max-height: 200px) {
+  #meta {
+    display: none;
+  }
+}
+#flex {
+  flex: 1;
+}
+
+#repeat[mode=repeat-one] path:last-child {
+  display: none;
+}
+#repeat[mode=no-repeat] path:first-child,
+#repeat[mode=repeat] path:first-child {
+  display: none;
+}
+#repeat[mode=repeat-one] path,
+#repeat[mode=repeat] path {
+  fill: #4285f4;
+}
+#shuffle[active="true"] {
+  fill: #4285f4;
+}
+
+[disabled=true] {
+  opacity: 0.2;
+  pointer-events: none;
+}

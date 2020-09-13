@@ -60,7 +60,10 @@ const drop = async es => {
   }
 };
 
-document.addEventListener('dblclick', () => {
+document.addEventListener('dblclick', e => {
+  if (e.target.closest('svg')) {
+    return;
+  }
   const input = document.createElement('input');
   input.type = 'file';
   input.multiple = true;
@@ -78,15 +81,5 @@ document.addEventListener('dragover', e => {
 });
 document.addEventListener('drop', e => {
   e.preventDefault();
-  document.querySelector('iframe').style['pointer-events'] = 'unset';
   drop([...e.dataTransfer.items]);
-});
-document.addEventListener('dragleave', () => {
-  document.querySelector('iframe').style['pointer-events'] = 'unset';
-  console.log('done');
-});
-window.addEventListener('message', e => {
-  if (e.data.method === 'drag-over') {
-    document.querySelector('iframe').style['pointer-events'] = 'none';
-  }
 });

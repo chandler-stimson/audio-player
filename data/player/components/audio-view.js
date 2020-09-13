@@ -1,4 +1,4 @@
-/* global Module */
+/* global decoder */
 
 const htime = delta => {
   const days = Math.floor(delta / 86400);
@@ -70,7 +70,6 @@ class AudioView extends HTMLElement {
         #parent:not([mode=play]) #play path:nth-child(1) {
           display: none;
         }
-        #parent[mode=nosrc] ::slotted(*),
         #parent[mode=nosrc] > svg {
           opacity: 0.2;
           pointer-events: none;
@@ -104,16 +103,18 @@ class AudioView extends HTMLElement {
       </style>
       <div id="parent" mode="nosrc" data-ready=false tabindex="-1">
         <slot name="before-play"></slot>
-        <svg id="play" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <svg id="play" viewBox="0 0 48 48">
           <path d="M16 10v28l22-14z"/>
           <path d="M12 38h8V10h-8v28zm16-28v28h8V10h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
         </svg>
         <slot name="before-stat"></slot>
-        <span id="current">0:00</span> / <span id="duration">0:00</span>
+        <span id="current">0:00</span>
         <progress-view id="progress"></progress-view>
+        <span id="duration">0:00</span>
+        <slot name="before-sound"></slot>
         <div id="volume">
           <progress-view id="sound"></progress-view>
-          <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 48 48">
             <path d="M14 18v12h8l10 10V8L22 18h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
           </svg>
         </div>
@@ -161,11 +162,16 @@ class AudioView extends HTMLElement {
         this.toggle();
       }
       else if (e.code === 'ArrowRight') {
-        console.log(e.metaKey || e.ctrlKey, e);
-        this.currentTime += (e.metaKey || e.ctrlKey) ? 30 : 10;
+        const shift = (e.metaKey || e.ctrlKey) ? 30 : 10;
+        if (this.currentTime + shift < this.audioBuffer.duration) {
+          this.currentTime += shift;
+        }
       }
       else if (e.code === 'ArrowLeft') {
-        this.currentTime -= (e.metaKey || e.ctrlKey) ? 30 : 10;
+        const shift = (e.metaKey || e.ctrlKey) ? 30 : 10;
+        if (this.currentTime - shift > 0) {
+          this.currentTime -= shift;
+        }
       }
       else if (e.code === 'ArrowUp') {
         this.volume += (e.metaKey || e.ctrlKey) ? 0.3 : 0.1;
@@ -230,7 +236,6 @@ class AudioView extends HTMLElement {
 
       const sound = this.sound = context.createGain();
       sound.gain.value = this.volume;
-      console.log(this.volume);
       sound.connect(context.destination);
       source.connect(sound);
 
@@ -245,16 +250,19 @@ class AudioView extends HTMLElement {
       return next();
     }
     else {
+      const parent = this.shadowRoot.getElementById('parent');
       arrayBuffer = arrayBuffer || await fetch(this.getAttribute('src')).then(r => r.arrayBuffer());
 
       try {
-        const decoded = await Module.decode({
+        parent.setAttribute('mode', 'nosrc');
+        const decoded = await decoder.decode({
           name: 'input',
           arrayBuffer
         });
         Object.assign(this, decoded);
       }
       catch (e) {
+        console.log('FFmpeg Decoder Failed', e);
         try {
           const context = new AudioContext();
           const audioBuffer = await context.decodeAudioData(arrayBuffer);

@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "name": "Audio Player",
-  "description": "FFmpeg-based audio player that supports all known audio formats",
+  "description": "FFmpeg-based audio player that supports a wide range of audio codecs",
   "permissions": [
     "storage"
   ],
@@ -25,8 +25,5 @@
   },
   "offline_enabled": true,
   "browser_action": {},
-  "homepage_url": "https://add0n.com/audio-player.html",
-  "sandbox": {
-    "pages": ["data/player/sandbox.html"]
-  }
+  "homepage_url": "https://add0n.com/audio-player.html"
 }
