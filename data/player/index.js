@@ -1,6 +1,8 @@
 /* global drag */
 'use strict';
 
+const args = new URLSearchParams(location.search);
+
 const audio = document.getElementById('audio');
 Object.defineProperty(audio, 'file', {
   get() {
@@ -36,13 +38,25 @@ const play = () => {
   previous.setAttribute('disabled', i === 0);
   next.setAttribute('disabled', i >= audio.files.length - 1);
 
-  const reader = new FileReader();
-  reader.onload = () => {
+  const done = buffer => {
     audio.file.count = (audio.file.count || 0) + 1;
-    audio.play(reader.result);
+    audio.play(buffer);
     title();
   };
-  reader.readAsArrayBuffer(audio.file);
+
+  if (audio.file) {
+    if (audio.file.href) {
+      document.title = 'Buffering...';
+      fetch(audio.file.href).then(r => r.arrayBuffer()).then(done).catch(e => alert(e.message));
+    }
+    else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        done(reader.result);
+      };
+      reader.readAsArrayBuffer(audio.file);
+    }
+  }
 };
 
 const navigate = (direction = 'forward', forced = false) => {
@@ -156,16 +170,40 @@ document.addEventListener('click', () => {
   });
 }
 
-chrome.runtime.connect({
-  name: 'player'
-});
-
-drag.onDrag(files => {
+const add = files => {
   audio.i = 0;
-  audio.files = files;
+  audio.files = audio.files || [];
+  audio.files = [...files, ...audio.files].filter((f, i, l) => f && l.indexOf(f) === i);
 
   if (audio.files.length) {
     play();
     audio.focus();
   }
+};
+
+drag.onDrag(add);
+chrome.runtime.onMessage.addListener((request, sender, response) => {
+  if (request.method === 'play') {
+    add([{
+      href: request.href,
+      name: request.name
+    }]);
+    response(true);
+    chrome.runtime.sendMessage({
+      method: 'bring-to-front'
+    });
+  }
+  else if (request.method === 'ping') {
+    response('pong');
+    chrome.runtime.sendMessage({
+      method: 'bring-to-front'
+    });
+  }
 });
+if (args.has('json')) {
+  const {href, name} = JSON.parse(args.get('json'));
+  add([{
+    href,
+    name
+  }]);
+}
