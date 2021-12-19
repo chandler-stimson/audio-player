@@ -11,7 +11,8 @@
       return c.reject(Error(error));
     }
     const context = new AudioContext();
-    const audioBuffer = context.createBuffer(meta['Channels'], channels[0].byteLength / meta['Sample Size'], meta['Sample Rate']);
+
+    const audioBuffer = context.createBuffer(meta['Channels'], channels[0].length, meta['Sample Rate']);
 
     channels.forEach((ch, c) => audioBuffer.copyToChannel(ch, c));
     c.resolve({
