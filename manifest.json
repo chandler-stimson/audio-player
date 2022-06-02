@@ -1,11 +1,13 @@
 {
-  "manifest_version": 2,
-  "version": "0.2.2",
+  "manifest_version": 3,
+  "version": "0.2.3",
   "name": "Audio Player",
   "description": "FFmpeg-based audio player that supports a wide range of audio codecs",
   "permissions": [
     "storage",
-    "contextMenus",
+    "contextMenus"
+  ],
+  "host_permissions": [
     "*://*/*"
   ],
   "icons": {
@@ -21,12 +23,12 @@
     "service_worker": "worker.js"
   },
   "offline_enabled": true,
-  "browser_action": {},
-  "content_security_policy": "script-src 'self' 'wasm-eval'; object-src 'self'",
+  "action": {},
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "homepage_url": "https://add0n.com/audio-player.html",
   "commands": {
-    "_execute_action": {
-      "description": "Press the action button"
-    }
+    "_execute_action": {}
   }
 }

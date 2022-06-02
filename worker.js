@@ -22,7 +22,7 @@ const click = (extra = '') => {
     }
   });
 };
-chrome.browserAction.onClicked.addListener(click);
+chrome.action.onClicked.addListener(click);
 
 chrome.runtime.onMessage.addListener((request, sender) => {
   if (request.method === 'bring-to-front') {
@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((request, sender) => {
     });
     chrome.contextMenus.create({
       id: 'samples',
-      contexts: ['browser_action'],
+      contexts: ['action'],
       title: 'Test Audio'
     });
     chrome.contextMenus.create({
