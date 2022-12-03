@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "name": "Audio Player",
   "description": "FFmpeg-based audio player that supports a wide range of audio codecs",
   "permissions": [

@@ -32,7 +32,8 @@ audio-view { /* stylelint-disable-line selector-type-no-unknown */
   grid-template-columns: min-content 1fr;
   grid-gap: 10px;
   align-self: start;
-  overflow: auto;
+  overflow: auto hidden;
+  white-space: nowrap;
 }
 #playlist {
   border-left: solid 4px #e7e7e7;
@@ -45,6 +46,7 @@ audio-view { /* stylelint-disable-line selector-type-no-unknown */
     display: none;
   }
 }
+
 @media screen and (min-height: 200px) {
   #flex {
     display: none !important;
