@@ -99,20 +99,22 @@ class AudioView extends HTMLElement {
           z-index: 1;
           pointer-events: none;
         }
-
       </style>
       <div id="parent" mode="nosrc" data-ready=false tabindex="-1">
         <slot name="before-play"></slot>
         <svg id="play" viewBox="0 0 48 48">
           <path d="M16 10v28l22-14z"/>
           <path d="M12 38h8V10h-8v28zm16-28v28h8V10h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
+          <title>Use Space to toggle play and pause</title>
         </svg>
         <slot name="before-stat"></slot>
         <span id="current">0:00</span>
-        <progress-view id="progress"></progress-view>
+        <progress-view id="progress" title="Use Arrow Left/Right to seek 10 seconds backward/forward
+Use Meta + Arrow Left/Right to seek 30 seconds backward/forward"></progress-view>
         <span id="duration">0:00</span>
         <slot name="before-sound"></slot>
-        <div id="volume">
+        <div id="volume" title="Use Arrow Up/Down to increase/decrease 10%
+Use Meta + Arrow Up/Down to increase/decrease 30%">
           <progress-view id="sound"></progress-view>
           <svg viewBox="0 0 48 48">
             <path d="M14 18v12h8l10 10V8L22 18h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
@@ -158,7 +160,10 @@ class AudioView extends HTMLElement {
     this.addEventListener('ended', () => progress.seek(100));
 
     this.addEventListener('keydown', e => {
-      if (e.code === 'Space') {
+      if (e.code === 'KeyB' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+        this.currentTime = 0;
+      }
+      else if (e.code === 'Space') {
         this.toggle();
       }
       else if (e.code === 'ArrowRight') {
@@ -175,9 +180,11 @@ class AudioView extends HTMLElement {
       }
       else if (e.code === 'ArrowUp') {
         this.volume += (e.metaKey || e.ctrlKey) ? 0.3 : 0.1;
+        this.volume = Math.round(this.volume * 10) / 10;
       }
       else if (e.code === 'ArrowDown') {
         this.volume -= (e.metaKey || e.ctrlKey) ? 0.3 : 0.1;
+        this.volume = Math.round(this.volume * 10) / 10;
       }
     });
 

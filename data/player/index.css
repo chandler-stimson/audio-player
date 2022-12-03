@@ -7,9 +7,9 @@ body {
   height: 100vh;
   margin: 0;
   background-color: #fff;
-  color: #4d5156
+  color: #4d5156;
 }
-audio-view {
+audio-view { /* stylelint-disable-line selector-type-no-unknown */
   outline: none;
   width: 100%;
 
@@ -19,20 +19,42 @@ audio-view {
 #dummy {
   display: none;
 }
+#extra {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  grid-gap: 10px;
+  padding: 10px;
+  flex: 1;
+  overflow: hidden;
+}
 #meta {
   display: grid;
   grid-template-columns: min-content 1fr;
   grid-gap: 10px;
-  white-space: nowrap;
-  margin: 10px;
+  align-self: start;
+  overflow: auto;
 }
+#playlist {
+  border-left: solid 4px #e7e7e7;
+  padding-left: 10px;
+  overflow: auto;
+}
+
 @media screen and (max-height: 200px) {
-  #meta {
+  #extra {
     display: none;
   }
 }
+@media screen and (min-height: 200px) {
+  #flex {
+    display: none !important;
+  }
+}
+
 #flex {
   flex: 1;
+  display: grid;
+  place-items: center;
 }
 
 #repeat[mode=repeat-one] path:last-child {

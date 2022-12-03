@@ -3,6 +3,8 @@ document.addEventListener('keydown', e => {
 
   const click = name => {
     e.preventDefault();
+    e.stopPropagation();
+
     const d = document.getElementById(name);
     if (d.hasAttribute('disabled') ? d.getAttribute('disabled') === 'false' : true) {
       d.dispatchEvent(new Event('click'));

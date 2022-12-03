@@ -35,6 +35,9 @@ const title = (msg = '') => {
 
 const play = () => {
   const i = audio.i || 0;
+
+  document.getElementById('view').selectedIndex = i + 1;
+
   previous.setAttribute('disabled', i === 0);
   next.setAttribute('disabled', i >= audio.files.length - 1);
 
@@ -56,6 +59,15 @@ const play = () => {
       };
       reader.readAsArrayBuffer(audio.file);
     }
+  }
+};
+
+document.getElementById('view').onchange = e => {
+  const n = e.target.selectedIndex;
+
+  if (n > 0 && audio.i + 1 !== n) {
+    audio.i = n - 1;
+    play();
   }
 };
 
@@ -94,7 +106,14 @@ const navigate = (direction = 'forward', forced = false) => {
     play();
   }
 };
-previous.addEventListener('click', () => navigate('backward', true));
+previous.addEventListener('click', e => {
+  if (e.shiftKey) {
+    audio.currentTime = 0;
+  }
+  else {
+    navigate('backward', true);
+  }
+});
 next.addEventListener('click', () => navigate('forward', true));
 
 {
@@ -171,9 +190,22 @@ document.addEventListener('click', () => {
 }
 
 const add = files => {
-  audio.i = 0;
+  audio.i = audio.i || 0;
   audio.files = audio.files || [];
-  audio.files = [...files, ...audio.files].filter((f, i, l) => f && l.indexOf(f) === i);
+
+  if (audio.files.length && files.length) {
+    audio.i += 1;
+  }
+
+  const view = document.getElementById('view');
+  for (const file of files) {
+    const n = audio.files.push(file);
+
+    view.option([
+      {name: file.name},
+      {name: file.href}
+    ], file.name, n, false).insert();
+  }
 
   if (audio.files.length) {
     play();
