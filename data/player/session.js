@@ -1,4 +1,4 @@
-/* global audio, MediaMetadata */
+/* global audio */
 
 const d = document.getElementById('dummy');
 

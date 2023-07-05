@@ -33,6 +33,44 @@ const title = (msg = '') => {
   }
 };
 
+const get = (href, progress) => new Promise((resolve, reject) => fetch(href).then(response => {
+  const contentLength = response.headers.get('Content-Length');
+  const total = parseInt(contentLength, 10);
+  let loaded = 0;
+
+  const reader = response.body.getReader();
+  const segments = [];
+
+  function read() {
+    reader.read().then(async ({done, value}) => {
+      if (done) {
+        const merged = await new Blob(segments.map(s => s.buffer)).arrayBuffer();
+        resolve(merged);
+
+        return;
+      }
+
+      loaded += value.length;
+      progress(loaded, total);
+      segments.push(value);
+
+      read();
+    }).catch(reject);
+  }
+  read();
+}).catch(reject));
+
+const format = (bytes, decimals) => {
+  if (bytes == 0) {
+    return '0 Bytes';
+  }
+  const k = 1024;
+  const dm = decimals || 2;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
+
 const play = () => {
   const i = audio.i || 0;
 
@@ -43,14 +81,26 @@ const play = () => {
 
   const done = buffer => {
     audio.file.count = (audio.file.count || 0) + 1;
-    audio.play(buffer);
+    audio.play(buffer).catch(e => {
+      document.title = (e.message || e);
+      console.error(e);
+    });
     title();
   };
 
   if (audio.file) {
     if (audio.file.href) {
-      document.title = 'Buffering...';
-      fetch(audio.file.href).then(r => r.arrayBuffer()).then(done).catch(e => alert(e.message));
+      get(audio.file.href, (s, m) => {
+        let msg = 'Buffering ';
+
+        msg += format(s, 1);
+
+        if (m) {
+          msg += ' / ' + format(m, 1);
+          msg += ' [' + (s / m * 100).toFixed(1) + '%]';
+        }
+        document.title = msg + '...';
+      }).then(done).catch(e => alert(e.message));
     }
     else {
       const reader = new FileReader();
@@ -233,9 +283,11 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
   }
 });
 if (args.has('json')) {
-  const {href, name} = JSON.parse(args.get('json'));
-  add([{
-    href,
-    name
-  }]);
+  setTimeout(() => {
+    const {href, name} = JSON.parse(args.get('json'));
+    add([{
+      href,
+      name
+    }]);
+  }, 0);
 }

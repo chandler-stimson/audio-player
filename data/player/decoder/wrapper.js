@@ -7,7 +7,7 @@
     delete cache[id];
 
     if (error) {
-      console.log('stderr', stderr, 'stdout', stdout);
+      console.info('stderr', stderr, 'stdout', stdout);
       return c.reject(Error(error));
     }
     const context = new AudioContext();

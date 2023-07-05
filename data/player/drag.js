@@ -46,10 +46,10 @@ const drop = async es => {
 
   for (const entry of entries) {
     if (entry.isFile) {
-      await checkEntry(entry).catch(e => console.warn('cannot add this file', e));
+      await checkEntry(entry).catch(e => console.warn('CANNOT_ADD_FILE', e));
     }
     else {
-      await readEntries(entry).catch(e => console.warn('cannot browse this directory', e));
+      await readEntries(entry).catch(e => console.warn('CANNOT_BROWSE', e));
     }
   }
 
@@ -60,10 +60,7 @@ const drop = async es => {
   }
 };
 
-document.addEventListener('dblclick', e => {
-  if (e.target.closest('svg')) {
-    return;
-  }
+document.addEventListener('dblclick', () => {
   const input = document.createElement('input');
   input.type = 'file';
   input.multiple = true;

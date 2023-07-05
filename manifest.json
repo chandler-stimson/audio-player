@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "0.2.4",
+  "version": "0.2.5",
   "name": "Audio Player",
   "description": "FFmpeg-based audio player that supports a wide range of audio codecs",
   "permissions": [
@@ -11,13 +11,13 @@
     "*://*/*"
   ],
   "icons": {
-    "16": "data/icons/16.png",
-    "32": "data/icons/32.png",
-    "48": "data/icons/48.png",
-    "64": "data/icons/64.png",
-    "128": "data/icons/128.png",
-    "256": "data/icons/256.png",
-    "512": "data/icons/512.png"
+    "16": "/data/icons/16.png",
+    "32": "/data/icons/32.png",
+    "48": "/data/icons/48.png",
+    "64": "/data/icons/64.png",
+    "128": "/data/icons/128.png",
+    "256": "/data/icons/256.png",
+    "512": "/data/icons/512.png"
   },
   "background": {
     "service_worker": "worker.js"
@@ -27,7 +27,7 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "homepage_url": "https://add0n.com/audio-player.html",
+  "homepage_url": "https://webextension.org/listing/audio-player.html",
   "commands": {
     "_execute_action": {}
   }

@@ -128,6 +128,13 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     };
   }
   connectedCallback() {
+    // prevent open dialog to open on dblclick
+    this.shadowRoot.addEventListener('dblclick', e => {
+      if (e.target.closest('svg')) {
+        e.stopPropagation();
+      }
+    });
+    // progress
     const progress = this.shadowRoot.getElementById('progress');
     progress.addEventListener('seek', e => {
       if (this.audioBuffer) {
@@ -258,7 +265,14 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     }
     else {
       const parent = this.shadowRoot.getElementById('parent');
-      arrayBuffer = arrayBuffer || await fetch(this.getAttribute('src')).then(r => r.arrayBuffer());
+      if (!arrayBuffer) {
+        if (this.getAttribute('src')) {
+          arrayBuffer = await fetch(this.getAttribute('src')).then(r => r.arrayBuffer());
+        }
+      }
+      if (!arrayBuffer) {
+        throw Error('EMPTY_BUFFER');
+      }
 
       try {
         parent.setAttribute('mode', 'nosrc');
@@ -269,7 +283,7 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
         Object.assign(this, decoded);
       }
       catch (e) {
-        console.log('FFmpeg Decoder Failed', e);
+        console.info('FFmpeg Decoder Failed', e);
         try {
           const context = new AudioContext();
           const audioBuffer = await context.decodeAudioData(arrayBuffer);
@@ -280,6 +294,8 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
           });
         }
         catch (ee) {
+          console.info('Native Decoder Failed', ee);
+
           this.reset();
           return this.dispatchEvent(new CustomEvent('error', {
             detail: e.message
