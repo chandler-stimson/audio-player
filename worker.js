@@ -43,12 +43,12 @@ chrome.runtime.onMessage.addListener((request, sender) => {
       id: 'play-audio',
       contexts: ['audio', 'video'],
       title: 'Play this Audio'
-    });
+    }, () => chrome.runtime.lastError);
     chrome.contextMenus.create({
       id: 'samples',
       contexts: ['action'],
       title: 'Test Audio'
-    });
+    }, () => chrome.runtime.lastError);
     chrome.contextMenus.create({
       title: 'Play this Audio',
       id: 'play-link',
@@ -57,26 +57,29 @@ chrome.runtime.onMessage.addListener((request, sender) => {
         'avi', 'mp4', 'webm', 'flv', 'mov', 'ogv', '3gp', 'mpg', 'wmv', 'swf', 'mkv',
         'pcm', 'wav', 'aac', 'ogg', 'wma', 'flac', 'mid', 'mka', 'm4a', 'voc', 'mp3'
       ].map(a => '*://*/*.' + a)
-    });
+    }, () => chrome.runtime.lastError);
   };
   chrome.runtime.onInstalled.addListener(once);
   chrome.runtime.onStartup.addListener(once);
 }
+
+const send = jobs => chrome.runtime.sendMessage({
+  method: 'jobs',
+  jobs
+}, r => {
+  chrome.runtime.lastError;
+  if (r !== true) {
+    click('json=' + encodeURIComponent(JSON.stringify(jobs)));
+  }
+});
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'play-link' || info.menuItemId === 'play-audio') {
-    const options = {
+    const jobs = [{
       href: info.srcUrl || info.linkUrl,
       name: tab.title
-    };
-    chrome.runtime.sendMessage({
-      method: 'play',
-      ...options
-    }, r => {
-      chrome.runtime.lastError;
-      if (r !== true) {
-        click('json=' + encodeURIComponent(JSON.stringify(options)));
-      }
-    });
+    }];
+    send(jobs);
   }
   else if (info.menuItemId === 'samples') {
     chrome.tabs.create({
@@ -84,6 +87,19 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     });
   }
 });
+
+/* file handling */
+if (chrome.fileBrowserHandler) {
+  chrome.fileBrowserHandler.onExecute.addListener((id, details) => {
+    if (id === 'open-media') {
+      const entries = details.entries;
+      send(entries.map(e => ({
+        name: e.name,
+        href: e.toURL()
+      })));
+    }
+  });
+}
 
 /* FAQs & Feedback */
 {

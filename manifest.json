@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "name": "Audio Player",
   "description": "FFmpeg-based audio player that supports a wide range of audio codecs",
   "permissions": [
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "fileBrowserHandler"
   ],
   "host_permissions": [
     "*://*/*"
@@ -30,5 +31,16 @@
   "homepage_url": "https://webextension.org/listing/audio-player.html",
   "commands": {
     "_execute_action": {}
-  }
+  },
+  "file_browser_handlers": [{
+    "id": "open-media",
+    "default_title": "Open with Audio Player",
+    "file_filters": [
+      "filesystem:*.avi", "filesystem:*.mp4", "filesystem:*.webm", "filesystem:*.flv", "filesystem:*.mov",
+      "filesystem:*.ogv", "filesystem:*.3gp", "filesystem:*.mpg", "filesystem:*.wmv", "filesystem:*.swf",
+      "filesystem:*.mkv", "filesystem:*.pcm", "filesystem:*.wav", "filesystem:*.aac", "filesystem:*.ogg",
+      "filesystem:*.wma", "filesystem:*.flac", "filesystem:*.mid", "filesystem:*.mka", "filesystem:*.m4a",
+      "filesystem:*.voc", "filesystem:*.mp3"
+    ]
+  }]
 }

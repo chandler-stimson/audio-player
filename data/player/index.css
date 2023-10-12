@@ -74,6 +74,11 @@ audio-view { /* stylelint-disable-line selector-type-no-unknown */
   fill: #4285f4;
 }
 
+#browse {
+  display: grid;
+  place-content: center;
+}
+
 [disabled=true] {
   opacity: 0.2;
   pointer-events: none;

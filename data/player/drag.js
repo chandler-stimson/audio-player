@@ -61,6 +61,9 @@ const drop = async es => {
 };
 
 document.addEventListener('dblclick', () => {
+  document.getElementById('browse').click();
+});
+document.getElementById('browse').addEventListener('click', () => {
   const input = document.createElement('input');
   input.type = 'file';
   input.multiple = true;

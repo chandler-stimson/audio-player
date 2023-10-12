@@ -12,6 +12,10 @@ Object.defineProperty(audio, 'file', {
 const next = document.getElementById('next');
 const previous = document.getElementById('previous');
 
+if (isNaN(localStorage.volume) === false) {
+  audio.volume = Number(localStorage.getItem('volume'));
+}
+
 const meta = (m = {}) => {
   document.getElementById('codec-name').textContent = m['Codec Long Name'] || '-';
   document.getElementById('sample-rate').textContent = audio.audioBuffer.sampleRate;
@@ -33,32 +37,61 @@ const title = (msg = '') => {
   }
 };
 
-const get = (href, progress) => new Promise((resolve, reject) => fetch(href).then(response => {
-  const contentLength = response.headers.get('Content-Length');
-  const total = parseInt(contentLength, 10);
-  let loaded = 0;
+const get = (href, progress) => {
+  if (href.startsWith('filesystem:')) { // fetch does not work with this scheme
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', href, true);
+      xhr.responseType = 'arraybuffer';
 
-  const reader = response.body.getReader();
-  const segments = [];
+      xhr.onprogress = e => {
+        if (e.lengthComputable) {
+          progress(e.loaded, e.total);
+        }
+      };
 
-  function read() {
-    reader.read().then(async ({done, value}) => {
-      if (done) {
-        const merged = await new Blob(segments.map(s => s.buffer)).arrayBuffer();
-        resolve(merged);
-
-        return;
-      }
-
-      loaded += value.length;
-      progress(loaded, total);
-      segments.push(value);
-
-      read();
-    }).catch(reject);
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            resolve(xhr.response);
+          }
+          else {
+            reject(xhr.status);
+          }
+        }
+      };
+      xhr.send();
+    });
   }
-  read();
-}).catch(reject));
+  else {
+    return fetch(href).then(response => {
+      const contentLength = response.headers.get('Content-Length');
+      const total = parseInt(contentLength, 10);
+      let loaded = 0;
+
+      const reader = response.body.getReader();
+      const segments = [];
+
+      return new Promise((resolve, reject) => {
+        function read() {
+          reader.read().then(({done, value}) => {
+            if (done) {
+              new Blob(segments.map(s => s.buffer)).arrayBuffer().then(resolve);
+              return;
+            }
+
+            loaded += value.length;
+            progress(loaded, total);
+            segments.push(value);
+
+            read();
+          }).catch(reject);
+        }
+        read();
+      });
+    });
+  }
+};
 
 const format = (bytes, decimals) => {
   if (bytes == 0) {
@@ -215,6 +248,7 @@ document.addEventListener('click', () => {
   let cid;
   audio.addEventListener('volumechange', () => {
     title('Volume Level: ' + (audio.volume * 100).toFixed(0) + '%');
+    localStorage.setItem('volume', audio.volume);
     clearTimeout(cid);
     cid = setTimeout(() => title(), 1000);
   });
@@ -265,11 +299,8 @@ const add = files => {
 
 drag.onDrag(add);
 chrome.runtime.onMessage.addListener((request, sender, response) => {
-  if (request.method === 'play') {
-    add([{
-      href: request.href,
-      name: request.name
-    }]);
+  if (request.method === 'jobs') {
+    add(request.jobs);
     response(true);
     chrome.runtime.sendMessage({
       method: 'bring-to-front'
@@ -284,10 +315,7 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
 });
 if (args.has('json')) {
   setTimeout(() => {
-    const {href, name} = JSON.parse(args.get('json'));
-    add([{
-      href,
-      name
-    }]);
+    const jobs = JSON.parse(args.get('json'));
+    add(jobs);
   }, 0);
 }

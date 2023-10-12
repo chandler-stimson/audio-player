@@ -30,6 +30,7 @@ class AudioView extends HTMLElement {
       <style>
         #parent {
           display: flex;
+          gap: 5px;
           align-items: center;
           background-color: var(--bg-color, #f1f3f4);
           border-radius: 30px;
@@ -39,9 +40,6 @@ class AudioView extends HTMLElement {
           outline: none;
           --height: 5px;
           --progress-bg-color: #000;
-        }
-        #parent > * {
-          margin: 0 5px;
         }
         ::slotted(*),
         #volume,
@@ -80,13 +78,14 @@ class AudioView extends HTMLElement {
         }
         #sound {
           width: 0;
-          padding-left: 5px;
+          padding-left: 0;
           --percent: 50%;
-          transition: width .5s;
+          transition: width .5s, padding-left .5s;
           position: relative;
         }
         #volume:hover > #sound {
           width: 48px;
+          padding-left: 5px;
         }
         #volume:hover > #sound:after {
           content: '';
@@ -120,6 +119,7 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
             <path d="M14 18v12h8l10 10V8L22 18h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
           </svg>
         </div>
+        <slot name="after-sound"></slot>
       </div>
     `;
     this.stat = {
@@ -232,7 +232,7 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     }
     const next = () => {
       if (session !== this.session) {
-        return console.log('skipped');
+        return console.info('skipped');
       }
 
       const {context, audioBuffer} = this;
@@ -250,6 +250,7 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
 
       const sound = this.sound = context.createGain();
       sound.gain.value = this.volume;
+
       sound.connect(context.destination);
       source.connect(sound);
 
