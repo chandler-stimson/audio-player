@@ -1,4 +1,4 @@
-/* global drag */
+/* global drag, launchQueue */
 'use strict';
 
 const args = new URLSearchParams(location.search);
@@ -319,3 +319,15 @@ if (args.has('json')) {
     add(jobs);
   }, 0);
 }
+
+launchQueue.setConsumer(async launchParams => {
+  if (!launchParams.files || !launchParams.files.length) {
+    return;
+  }
+  const files = [];
+  for (const fileHandle of launchParams.files) {
+    const file = await fileHandle.getFile();
+    files.push(file);
+  }
+  add(files);
+});
