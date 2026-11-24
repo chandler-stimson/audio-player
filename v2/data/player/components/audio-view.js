@@ -732,6 +732,8 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
        chunk can ever contain the end position */
     if ((s.done || (s.duration !== null && this.stat.stop >= s.duration)) &&
         this.#chunkAt(this.stat.stop) === null) {
+      // the flag must be up before the restart seek takes it over
+      s.wantPlay = true;
       this.#seekStream(0);
       return;
     }
@@ -767,7 +769,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
 
     this.#stopRun();
     this.stat.stop = target;
-    s.wantPlay = true;
+    // the seek moves the playhead only; whether the track plays stays as it
+    // was (#resume raises the flag before its restart seek to the beginning)
+    s.wantPlay = wasPlaying;
 
     /* a seek that lands at the end of a known track has nothing left to
        decode or play: no chunk can contain the end position (the decoded
@@ -944,14 +948,25 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
   set currentTime(v) {
     if (this.stream) {
       this.#seekStream(v);
-      return;
     }
-    if (this.source) {
-      this.pause();
+    else {
+      // the seek moves the playhead only; whether the track plays stays
+      // as it was
+      const wasPlaying = !!this.source;
+      if (this.source) {
+        this.pause();
+      }
+      if (this.audioBuffer) {
+        this.stat.stop = Math.max(0, Math.min(this.audioBuffer.duration, v));
+        if (wasPlaying) {
+          this.play();
+        }
+      }
     }
-    if (this.audioBuffer) {
-      this.stat.stop = Math.max(0, Math.min(this.audioBuffer.duration, v));
-      this.play();
+    // the play loop writes the label only while playing; a seek shows where
+    // the playhead went right away (a paused scrub updates it too)
+    if (this.stream || this.audioBuffer) {
+      this.shadowRoot.getElementById('current').textContent = htime(this.currentTime);
     }
   }
   get volume() {
