@@ -20,7 +20,10 @@ audio.addEventListener('pause', () => {
   d.pause();
 });
 
-navigator.mediaSession.setActionHandler('play', () => audio.play());
+/* nothing is loaded when the handler runs (an unloaded restored selection or
+   an empty playlist); the host-aware toggle() path starts the selected track
+   instead of failing on the missing source */
+navigator.mediaSession.setActionHandler('play', () => audio.toggle());
 navigator.mediaSession.setActionHandler('pause', () => audio.pause());
 navigator.mediaSession.setActionHandler('seekbackward', () => {
   audio.dispatchEvent(new KeyboardEvent('keydown', {'code': 'ArrowLeft'}));
