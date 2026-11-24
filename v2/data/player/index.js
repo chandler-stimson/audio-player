@@ -12,8 +12,13 @@ Object.defineProperty(audio, 'file', {
 const next = document.getElementById('next');
 const previous = document.getElementById('previous');
 
-if (isNaN(localStorage.volume) === false) {
-  audio.volume = Number(localStorage.getItem('volume'));
+/* the volume of the last session; a missing entry reads as null, which the
+   numeric test alone would otherwise treat as a stored zero */
+{
+  const saved = localStorage.getItem('volume');
+  if (saved !== null && isNaN(saved) === false) {
+    audio.volume = Number(saved);
+  }
 }
 
 /* the tooltip wording of the skip preference; a number is a plain period of
