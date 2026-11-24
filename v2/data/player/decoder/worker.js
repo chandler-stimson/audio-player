@@ -252,7 +252,12 @@ const makeFeed = input => ({
   retain: input.kind === 'href' && !input.ranges,
 
   reset() {
-    this.regions = [];
+    // the retained regions of a sequential download are the only copy of
+    // the bytes it already delivered; the input cannot re-read them, so a
+    // reset rewinds the cursor but keeps them
+    if (!this.retain) {
+      this.regions = [];
+    }
     this.cursor = 0;
   },
   add(region) {
