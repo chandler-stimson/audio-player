@@ -289,7 +289,15 @@ const askAccess = (file, index, e) => {
   title('Read access needed: ' + file.name);
 };
 
+/* the pending automatic advancement of the track that just ended; loading
+   any other track or resetting the player cancels it */
+let advance;
+
 const play = () => {
+  // the track that the user selects cancels the advancement that the track
+  // that just ended scheduled; a slow decode can no longer let it fire
+  clearTimeout(advance);
+
   const i = audio.i || 0;
 
   document.getElementById('view').selectedIndex = i + 1;
@@ -478,9 +486,10 @@ document.getElementById('skip-forward').addEventListener('click', () => {
 }
 
 {
-  let id;
   audio.addEventListener('play', () => {
-    clearTimeout(id);
+    // a start that bypassed play() (the Space key resuming the ended track)
+    // cancels the pending advancement as well
+    clearTimeout(advance);
     // decode the next track in the background while this one is playing
     prefetch();
   });
@@ -504,7 +513,9 @@ document.getElementById('skip-forward').addEventListener('click', () => {
       return Boolean(file && cache.has(file));
     })();
 
-    id = setTimeout(() => {
+    // a repeated ended or error must not leave an orphaned timer behind
+    clearTimeout(advance);
+    advance = setTimeout(() => {
       const r = document.getElementById('repeat').getAttribute('mode');
       if (r === 'repeat-one') {
         play();
@@ -1018,6 +1029,8 @@ const closeMetadata = () => {
 /* nothing is playing anymore; the player is reset to its idle state while
    the playlist stays in place */
 const stopped = () => {
+  // an idle player must not advance anymore
+  clearTimeout(advance);
   // the decode that might still be running belongs to a removed track
   decoder.cancel('user');
   audio.reset();
