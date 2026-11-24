@@ -347,7 +347,16 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     }
   }
   toggle() {
-    this[this.source ? 'pause' : 'play']();
+    if (this.source) {
+      this.pause();
+    }
+    else if (this.audioBuffer) {
+      this.play();
+    }
+    else {
+      // nothing is loaded; the host decides (it can start the selected track)
+      this.dispatchEvent(new Event('empty'));
+    }
   }
   get currentTime() {
     if (this.source && this.context.state === 'running') {

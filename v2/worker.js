@@ -38,30 +38,105 @@ chrome.runtime.onMessage.addListener((request, sender) => {
 
 // context menu
 {
-  const once = () => {
-    chrome.contextMenus.create({
-      id: 'play-audio',
-      contexts: ['audio', 'video'],
-      title: 'Play this Audio'
-    }, () => chrome.runtime.lastError);
-    chrome.contextMenus.create({
-      id: 'samples',
-      contexts: ['action'],
-      title: 'Test Audio'
-    }, () => chrome.runtime.lastError);
-    chrome.contextMenus.create({
-      title: 'Play this Audio',
-      id: 'play-link',
-      contexts: ['link'],
-      targetUrlPatterns: [
-        'avi', 'mp4', 'webm', 'flv', 'mov', 'ogv', '3gp', 'mpg', 'wmv', 'swf', 'mkv',
-        'pcm', 'wav', 'aac', 'ogg', 'wma', 'flac', 'mid', 'mka', 'm4a', 'voc', 'mp3'
-      ].map(a => '*://*/*.' + a)
-    }, () => chrome.runtime.lastError);
+  const once = async () => {
+    const prefs = await chrome.storage.local.get({
+      'remember-tracks': 10
+    });
+
+    // remove the previous menus so that the radio checkmarks are refreshed
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: 'play-audio',
+        contexts: ['audio', 'video'],
+        title: 'Play this Audio'
+      }, () => chrome.runtime.lastError);
+      chrome.contextMenus.create({
+        id: 'samples',
+        contexts: ['action'],
+        title: 'Test Audio'
+      }, () => chrome.runtime.lastError);
+      chrome.contextMenus.create({
+        title: 'Play this Audio',
+        id: 'play-link',
+        contexts: ['link'],
+        targetUrlPatterns: [
+          'avi', 'mp4', 'webm', 'flv', 'mov', 'ogv', '3gp', 'mpg', 'wmv', 'swf', 'mkv',
+          'pcm', 'wav', 'aac', 'ogg', 'wma', 'flac', 'mid', 'mka', 'm4a', 'voc', 'mp3'
+        ].map(a => '*://*/*.' + a)
+      }, () => chrome.runtime.lastError);
+
+      // settings for the tracks that the player remembers between sessions
+      chrome.contextMenus.create({
+        id: 'settings',
+        contexts: ['action'],
+        title: 'Settings'
+      }, () => chrome.runtime.lastError);
+      for (const c of [10, 20, 30]) {
+        chrome.contextMenus.create({
+          id: 'remember-' + c,
+          parentId: 'settings',
+          contexts: ['action'],
+          title: 'Remember Last ' + c + ' Tracks',
+          type: 'radio',
+          checked: prefs['remember-tracks'] === c
+        }, () => chrome.runtime.lastError);
+      }
+      chrome.contextMenus.create({
+        id: 'remember-none',
+        parentId: 'settings',
+        contexts: ['action'],
+        title: 'Do Not Remember Tracks',
+        type: 'radio',
+        checked: prefs['remember-tracks'] === 0
+      }, () => chrome.runtime.lastError);
+    });
   };
   chrome.runtime.onInstalled.addListener(once);
   chrome.runtime.onStartup.addListener(once);
 }
+
+/* the remembered tracks are stored by the player page in IndexedDB; shrink
+   or clear them here so that a reduced preference is effective even when the
+   player window is closed */
+const enforce = async n => {
+  try {
+    const r = indexedDB.open('audio-player', 1);
+    // use the same schema as the player page
+    r.onupgradeneeded = () => {
+      if (r.result.objectStoreNames.contains('tracks') === false) {
+        r.result.createObjectStore('tracks');
+      }
+    };
+    const database = await new Promise((resolve, reject) => {
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    if (database.objectStoreNames.contains('tracks') === false) {
+      return;
+    }
+
+    const t = database.transaction('tracks', 'readwrite');
+    const os = t.objectStore('tracks');
+    t.onabort = () => console.warn('CANNOT_ENFORCE_TRACKS', t.error);
+    if (n === 0) {
+      os.clear();
+    }
+    else {
+      const req = os.get('list');
+      req.onsuccess = () => {
+        const record = req.result;
+        if (record && record.list && record.list.length > n) {
+          os.put({
+            list: record.list.slice(-n)
+          }, 'list');
+        }
+      };
+    }
+  }
+  catch (e) {
+    console.warn('CANNOT_ENFORCE_TRACKS', e);
+  }
+};
 
 const send = jobs => chrome.runtime.sendMessage({
   method: 'jobs',
@@ -85,6 +160,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     chrome.tabs.create({
       url: 'https://webbrowsertools.com/audio-test/'
     });
+  }
+  else if (info.menuItemId.startsWith('remember-')) {
+    const n = info.menuItemId === 'remember-none' ? 0 :
+      Number(info.menuItemId.replace('remember-', ''));
+    chrome.storage.local.set({
+      'remember-tracks': n
+    });
+    enforce(n);
   }
 });
 

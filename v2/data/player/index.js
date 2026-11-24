@@ -1,4 +1,4 @@
-/* global drag, launchQueue, decoder */
+/* global drag, launchQueue, decoder, remember */
 'use strict';
 
 const args = new URLSearchParams(location.search);
@@ -167,6 +167,10 @@ const prefetch = () => {
   if (!file || file === audio.file || cache.has(file)) {
     return;
   }
+  // a locked track is not readable until its read permission is granted
+  if (file.locked) {
+    return;
+  }
   // decoding a very large input in the background costs more (CPU and memory)
   // than the transition it would save
   if (file.size && file.size > PREFETCH_LIMIT) {
@@ -208,6 +212,29 @@ const done = (file, action) => {
   title();
 };
 
+/* a remembered local track is listed before its read permission is granted;
+   ask for the permission and replace the locked entry with the readable file */
+const unlock = async (file, index) => {
+  let state;
+  try {
+    state = await file.handle.requestPermission({mode: 'read'});
+  }
+  catch (e) {
+    // the permission prompt requires a user gesture; keyboard jumps and the
+    // automatic advancement do not provide one
+    throw Error('Cannot read "' + file.name + '". Click the track once to grant the read access.');
+  }
+  if (state !== 'granted') {
+    throw Error('The read permission for "' + file.name + '" was denied.');
+  }
+
+  const real = await file.handle.getFile();
+  real.handle = file.handle;
+  audio.files[index] = real;
+
+  return real;
+};
+
 const play = () => {
   const i = audio.i || 0;
 
@@ -218,6 +245,25 @@ const play = () => {
 
   const file = audio.file;
   if (!file) {
+    return;
+  }
+
+  // a remembered local track needs its read permission before it can be
+  // decoded; selecting the track provides the gesture for the prompt
+  if (file.locked) {
+    unlock(file, i).then(() => {
+      // the row is readable now; revert it to a normal row
+      if (file.cleanup) {
+        file.cleanup();
+      }
+      // the track was not switched while the permission was being asked for
+      if ((audio.i || 0) === i) {
+        play();
+      }
+    }).catch(e => {
+      document.title = (e.message || e);
+      alert(e.message || e);
+    });
     return;
   }
 
@@ -380,6 +426,13 @@ next.addEventListener('click', () => navigate('forward', true));
 }
 audio.addEventListener('loadedmetadata', () => meta(audio.meta));
 
+// the play button and the Space key with nothing loaded start the selected track
+audio.addEventListener('empty', () => {
+  if (audio.files && audio.files.length) {
+    play();
+  }
+});
+
 document.addEventListener('click', () => {
   audio.focus();
 });
@@ -427,7 +480,7 @@ const add = files => {
 
     view.option([
       {name: file.name},
-      {name: file.href}
+      {name: file.href || 'Local File'}
     ], file.name, n, false).insert();
   }
 
@@ -435,6 +488,9 @@ const add = files => {
     play();
     audio.focus();
   }
+
+  // remember the newly added tracks (best effort; never blocks the playback)
+  remember.save(files);
 };
 
 drag.onDrag(add);
@@ -453,20 +509,82 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
     });
   }
 });
+/* restore the remembered tracks into the playlist without playing them; a
+   track that is passed to this window afterwards plays as the newly added
+   one */
+const restored = remember.restore().then(files => {
+  if (files.length === 0) {
+    return;
+  }
+
+  audio.files = audio.files || [];
+
+  const view = document.getElementById('view');
+  for (const file of files) {
+    const n = audio.files.push(file);
+
+    const o = view.option([
+      {name: file.name},
+      {name: file.href || (file.locked ? 'Local File (read permission needed)' : 'Local File')}
+    ], file.name, n, false);
+    o.insert();
+    // a locked track becomes readable once its read permission is granted;
+    // the row handles its own click because the current row cannot be
+    // re-selected through the hidden select of the list view
+    if (file.locked) {
+      const div = o._internal.div;
+      div.style.opacity = '0.6';
+      div.style.pointerEvents = 'initial';
+      div.style.cursor = 'pointer';
+
+      const handler = () => {
+        audio.i = n - 1;
+        play();
+      };
+      div.addEventListener('click', handler);
+
+      // revert the row to a normal one once the file is readable
+      file.cleanup = () => {
+        div.removeEventListener('click', handler);
+        div.style.pointerEvents = '';
+        div.style.cursor = '';
+        div.style.opacity = '';
+        div.lastElementChild.textContent = 'Local File';
+      };
+    }
+  }
+
+  // the last restored track is the current one
+  audio.i = audio.files.length - 1;
+  view.selectedIndex = audio.i + 1;
+  title();
+
+  // the play button of the audio view is disabled while no source is loaded;
+  // a selected track is a playable source for it
+  const parent = audio.shadowRoot.getElementById('parent');
+  if (parent.getAttribute('mode') === 'nosrc') {
+    parent.setAttribute('mode', 'play');
+  }
+}).catch(e => console.warn('CANNOT_RESTORE_TRACKS', e));
+
 if (args.has('json')) {
-  setTimeout(() => {
+  restored.then(() => {
     const jobs = JSON.parse(args.get('json'));
     add(jobs);
-  }, 0);
+  });
 }
 
 launchQueue.setConsumer(async launchParams => {
   if (!launchParams.files || !launchParams.files.length) {
     return;
   }
+  // wait for the remembered tracks so that the opened files play as the
+  // newly added ones
+  await restored;
   const files = [];
   for (const fileHandle of launchParams.files) {
     const file = await fileHandle.getFile();
+    file.handle = fileHandle; // remember the opened local files
     files.push(file);
   }
   add(files);
