@@ -812,7 +812,8 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     this.dispatchEvent(new Event('pause'));
   }
   /* seek the stream to a content position; an in-window position resumes
-     from the decoded chunks, anything else re-cues the decoder */
+     from the decoded chunks (unless a seek is re-cuing the decoder),
+     anything else re-cues the decoder */
   #seekStream(v) {
     const s = this.stream;
     if (!s) {
@@ -857,22 +858,34 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     }
 
     const hit = this.#chunkAt(target);
-    if (hit) {
+    if (hit && !s.seeking) {
       // the window covers the position; no decoder round trip is needed
-      // (the run start waits for its decoding lead on its own)
+      // (the run start waits for its decoding lead on its own). A seek
+      // still in flight re-cues the decoder elsewhere: resuming the
+      // cached window now would let the older seek's result land on the
+      // newer state and corrupt its coverage, so the target chains
+      // behind that seek below instead
       this.#scheduleRun();
       this.#maintain();
       return;
     }
 
-    // an out-of-window position re-cues the decoder; a seek that arrives
-    // while another one is re-cuing simply chains behind it (the wrapper
-    // matches the responses in order and the stale chunks are dropped by
-    // their epoch), which keeps the newest target from being lost
+    // an out-of-window position re-cues the decoder (and so does an
+    // in-window one while another seek is re-cuing: that older command
+    // has already moved the decoder elsewhere); a seek that arrives
+    // while another one is re-cuing simply chains behind it (the
+    // wrapper matches the responses in order and the stale chunks are
+    // dropped by their epoch), which keeps the newest target from being
+    // lost. Only the newest seek of a chain may write the stream state:
+    // the older ones resolve first and their results must never land on
+    // the newer target's state
     const gen = s.gen;
-    s.seeking = s.session.seek(target).then(() => {
+    const pending = s.session.seek(target).then(() => {
       if (this.stream !== s) {
         return;
+      }
+      if (s.seeking !== pending) {
+        return; // a newer seek owns the stream; its result stands
       }
       s.seeking = null;
       if (s.gen !== gen) {
@@ -888,6 +901,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     }).catch(e => {
       if (this.stream !== s) {
         return;
+      }
+      if (s.seeking !== pending) {
+        return; // a newer seek owns the stream; its result stands
       }
       s.seeking = null;
       // the wrapper fails a pending seek before it calls onstop, so the
@@ -917,6 +933,7 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         }));
       }
     });
+    s.seeking = pending;
   }
 
   // play an already decoded result (produced by the decoder wrapper or cached
