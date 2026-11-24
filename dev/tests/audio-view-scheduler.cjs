@@ -12,6 +12,11 @@
      - the play button after the end: the spent stream replays from the
        origin like the buffer mode does
      - starvation: the run stops where the audio ran out and recovers
+     - a seek to the end: the finished state is entered without the
+       decoder (a re-cue to the end can never be served), and Play
+       replays the stream from the origin
+     - a seek the input cannot serve: the position falls back to where
+       it was and the paused track stays paused
 
    Run: node dev/tests/audio-view-scheduler.cjs */
 
@@ -284,16 +289,73 @@ const run = async () => {
   console.log('starvation ok: recovered at', el.currentTime.toFixed(2),
     'with', world.pulls.length, 'pull requests');
 
+  /* a seek that lands at the end of a known track enters the finished
+     state directly: no decoder round trip is made (the decoded window is
+     half-open, so a re-cue to the end position would stall the stream at
+     its destination forever), the ended signal fires like at the natural
+     end, and the session is not asked even when it could not serve the
+     seek */
+  el.pause();
+  await new Promise(resolve => setImmediate(resolve));
+  const endFrom = world.events.length;
+  const endSeeks = world.seekCalls.length;
+  world.scheduled.length = 0;
+  session.failSeeks = true; // the shortcut must not ask the session at all
+  el.currentTime = 90; // clamps to the end of the track
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  if (world.seekCalls.length !== endSeeks) {
+    throw Error('the seek to the end asked the decoder: ' + JSON.stringify(world.seekCalls));
+  }
+  if (Math.abs(el.currentTime - 60) > 0.01) {
+    throw Error('the seek to the end left the position at ' + el.currentTime);
+  }
+  if (world.events.slice(endFrom).join(',') !== 'pause,ended') {
+    throw Error('the seek to the end produced ' + JSON.stringify(world.events.slice(endFrom)));
+  }
+  if (!el.stream.done || world.scheduled.length) {
+    throw Error('the seek to the end did not enter the finished state');
+  }
+  console.log('end seek ok: finished at', el.currentTime, 'without the decoder');
+
+  /* the play button after the direct end: the spent stream replays from
+     its origin like it does after the natural end */
+  session.failSeeks = false; // the re-cue to the origin must succeed
+  {
+    const from = world.events.length;
+    world.scheduled.length = 0;
+    el.toggle();
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    if (world.seekCalls.length !== endSeeks + 1 || world.seekCalls[endSeeks] !== 0) {
+      throw Error('the finished stream was not re-cued to the origin: ' + JSON.stringify(world.seekCalls));
+    }
+    if (world.events.indexOf('play', from) === -1) {
+      throw Error('the play button did not restart the finished stream: ' + JSON.stringify(world.events.slice(from)));
+    }
+    const replay = world.scheduled[0].started;
+    if (replay.offset !== 0) {
+      throw Error('the replay starts at chunk offset ' + replay.offset);
+    }
+    console.log('play-after-end-seek ok: replays from the origin');
+  }
+
   /* a seek that the input cannot serve falls back to the previous position
-     and keeps the track paused when it was paused */
+     and keeps the track paused when it was paused; the target is past the
+     decoded window and short of the end, so the session is asked and its
+     rejection is what falls back */
   el.pause();
   await new Promise(resolve => setImmediate(resolve));
   const pausedAt = el.currentTime;
+  const seeks = world.seekCalls.length;
   world.scheduled.length = 0;
   session.failSeeks = true;
-  el.currentTime = 90; // clamps to the end of the track, beyond the window
+  el.currentTime = 55;
   await new Promise(resolve => setImmediate(resolve));
   await new Promise(resolve => setImmediate(resolve));
+  if (world.seekCalls.length !== seeks + 1 || world.seekCalls[seeks] !== 55) {
+    throw Error('the failed seek did not ask the decoder: ' + JSON.stringify(world.seekCalls));
+  }
   if (Math.abs(el.currentTime - pausedAt) > 0.001) {
     throw Error('the failed seek moved the position to ' + el.currentTime);
   }
