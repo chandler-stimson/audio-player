@@ -146,3 +146,62 @@ remember.restore = async () => {
     return [];
   }
 };
+
+/* remove a deleted track from the stored list; the promise never rejects */
+remember.remove = file => {
+  queue = queue.then(() => remember.unpersist(file));
+  return queue;
+};
+
+remember.unpersist = async file => {
+  try {
+    const record = remember.toRecord(file);
+    if (!record) {
+      return; // the track was never stored (a dropped File without a handle)
+    }
+
+    // the stored handles are fresh structured clones; only `isSameEntry` can
+    // compare them with the handle of the deleted track
+    const same = async r => {
+      if (r.kind !== record.kind) {
+        return false;
+      }
+      if (r.kind === 'file') {
+        try {
+          return await r.handle.isSameEntry(record.handle);
+        }
+        catch (e) {
+          return false;
+        }
+      }
+      return r.href === record.href;
+    };
+
+    const list = await db.read();
+    const kept = [];
+    for (const r of list) {
+      if ((await same(r)) === false) {
+        kept.push(r);
+      }
+    }
+    if (kept.length !== list.length) {
+      await db.write(kept);
+    }
+  }
+  catch (e) {
+    console.warn('CANNOT_FORGET_TRACK', e);
+  }
+};
+
+/* forget every stored track; the promise never rejects */
+remember.clear = () => {
+  queue = queue.then(async () => {
+    try {
+      await db.clear();
+    }
+    catch (e) {
+      console.warn('CANNOT_CLEAR_TRACKS', e);
+    }
+  });
+  return queue;
+};

@@ -7,16 +7,19 @@
   let context;
   const sharedContext = () => context || (context = new AudioContext());
 
-  // one worker for user-critical decodes and one for background prefetches so
-  // that decoding the next track never delays the track the user waits for
+  // one worker for user-critical decodes, one for background prefetches and
+  // one for the on-demand metadata fetches so that none of them delays the
+  // track the user waits for
   const workers = {};
   const queues = {
     user: [],
-    prefetch: []
+    prefetch: [],
+    meta: []
   };
   const busy = {
     user: false,
-    prefetch: false
+    prefetch: false,
+    meta: false
   };
   // the job that currently occupies a worker (set when dequeued)
   const running = {};

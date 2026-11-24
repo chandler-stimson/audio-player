@@ -7,20 +7,6 @@
 <body>
   <audio controls id="dummy" src="silence.mp3" loop></audio>
   <div id="extra">
-    <div id="meta">
-      <span>Codec Name</span>
-      <span id="codec-name">-</span>
-      <span>Sample Rate</span>
-      <span id="sample-rate">-</span>
-      <span>Sample Size</span>
-      <span id="sample-size">-</span>
-      <span>Number of Channels</span>
-      <span id="number-of-channels">-</span>
-      <span>LIBAVCODEC Version</span>
-      <span id="avcodec-version">-</span>
-      <span>LIBAVFORMAT Version</span>
-      <span id="avformat-version">-</span>
-    </div>
     <div id="playlist">
       <list-view drag="false" headers="false" id="view">
         <span width="1fr">Title</span>
@@ -28,7 +14,7 @@
       </list-view>
     </div>
   </div>
-  <span id="flex">Increase the height to see Playlist and Meta</span>
+  <span id="flex">Increase the height to see the Playlist</span>
   <audio-view id="audio" tabindex="0">
     <svg width="24" id="next" disabled="true" slot="before-stat" viewBox="0 0 48 48">
       <path d="M12 36l17-12-17-12v24zm20-24v24h4V12h-4z"/><path d="M0 0h48v48H0z" fill="none"/>
@@ -56,6 +42,41 @@ Move to the beginning of the current track (Ctrl/Command + Shift + B or Shift + 
       </svg>
     </div>
   </audio-view>
+
+  <!-- the invisible anchor that follows the cursor of a right-click -->
+  <span id="menu-anchor"></span>
+
+  <!-- the right-click context menu of the playlist -->
+  <div popover id="context-menu">
+    <div focusgroup="menu nomemory" aria-label="Playlist menu">
+      <button type="button" id="play-this">Play This</button>
+      <button type="button" id="delete-this">Delete This</button>
+      <button type="button" id="show-metadata">Show Metadata</button>
+      <hr>
+      <button type="button" id="delete-all">Delete All</button>
+    </div>
+  </div>
+
+  <!-- the confirmation of the destructive "Delete All" -->
+  <dialog id="confirm" aria-labelledby="confirm-title">
+    <h1 id="confirm-title">Delete All Tracks?</h1>
+    <p id="confirm-body"></p>
+    <form method="dialog">
+      <button value="cancel" autofocus>Cancel</button>
+      <button value="delete-all" id="confirm-delete">Delete All</button>
+    </form>
+  </dialog>
+
+  <!-- the metadata of a track; the codec information of a track that was
+       never decoded is fetched while the dialog is open -->
+  <dialog id="metadata" aria-labelledby="metadata-title" closedby="any">
+    <h1 id="metadata-title">Metadata</h1>
+    <div id="metadata-grid"></div>
+    <p id="metadata-status" hidden></p>
+    <form method="dialog">
+      <button value="close" autofocus>Close</button>
+    </form>
+  </dialog>
 
   <script type="text/javascript" src="components/progress-view.js"></script>
   <script type="text/javascript" src="components/audio-view.js"></script>

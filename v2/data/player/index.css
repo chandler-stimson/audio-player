@@ -20,25 +20,150 @@ audio-view { /* stylelint-disable-line selector-type-no-unknown */
   display: none;
 }
 #extra {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  grid-gap: 10px;
+  display: flex;
+  flex-direction: column;
   padding: 10px;
   flex: 1;
   overflow: hidden;
 }
-#meta {
+#playlist {
+  flex: 1;
+  overflow: auto;
+}
+
+/* the invisible anchor that follows the cursor of a right-click */
+#menu-anchor {
+  position: fixed;
+  inline-size: 0;
+  block-size: 0;
+}
+
+/* the right-click context menu of the playlist */
+#context-menu {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+  border: solid 1px #dadce0;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  background-color: #fff;
+  padding: 5px 0;
+  min-width: 170px;
+
+  /* the menu is aligned with the cursor of the right-click and flipped when
+     there is no room; the browsers without the anchor support use the manual
+     positioning of the script instead */
+  position-area: block-end span-inline-end;
+  position-try: flip-inline, flip-block, flip-start;
+}
+/* the browsers without the popover support use the manual fallback; the menu
+   stays hidden until the fallback opens it */
+@supports not selector(:popover-open) {
+  #context-menu {
+    display: none;
+  }
+}
+#context-menu button {
+  display: block;
+  width: 100%;
+  border: none;
+  background-color: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+#context-menu button:hover:not(:disabled),
+#context-menu button:focus-visible:not(:disabled) {
+  background-color: #f1f3f4;
+}
+#context-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#context-menu hr {
+  border: none;
+  border-top: solid 1px #e7e7e7;
+  margin: 5px 0;
+}
+
+/* the metadata and the delete-all confirmation dialogs */
+dialog {
+  border: solid 1px #dadce0;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  padding: 16px;
+  min-width: 280px;
+  max-width: min(90vw, 420px);
+}
+dialog::backdrop {
+  background-color: rgba(0, 0, 0, 0.2);
+
+  /* the backdrop is not a scroll container; the containment still stops a
+     scroll over it from scrolling the page behind it */
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog h1 {
+  font-size: 15px;
+  margin: 0;
+}
+dialog form {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+dialog button {
+  font: inherit;
+  color: #4d5156;
+  border: solid 1px #dadce0;
+  border-radius: 4px;
+  background-color: #fff;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+dialog button:hover {
+  background-color: #f1f3f4;
+}
+dialog button:focus-visible {
+  outline: 2px solid #4285f4;
+}
+#confirm-body {
+  margin: 10px 0 0;
+}
+#confirm-delete {
+  color: #fff;
+  border-color: #d93025;
+  background-color: #d93025;
+}
+#confirm-delete:hover {
+  border-color: #c5221f;
+  background-color: #c5221f;
+}
+#metadata-grid {
   display: grid;
   grid-template-columns: min-content 1fr;
-  grid-gap: 10px;
-  align-self: start;
-  overflow: auto hidden;
-  white-space: nowrap;
+  grid-gap: 5px 12px;
+  margin-top: 10px;
 }
-#playlist {
-  border-left: solid 4px #e7e7e7;
-  padding-left: 10px;
-  overflow: auto;
+#metadata-grid span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the values wrap; a long track name must not stretch the dialog */
+#metadata-grid span:nth-child(even) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+#metadata-status {
+  margin: 10px 0 0;
+  color: #70757a;
 }
 
 @media screen and (max-height: 200px) {
