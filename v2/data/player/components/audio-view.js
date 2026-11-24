@@ -381,6 +381,11 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       done: false,
       pulling: null,
       seeking: null,
+      /* the state revision of the stream; it is bumped when the element
+         takes the state over without the decoder (a seek to the finished
+         end), so that a pull or a seek still in flight cannot write its
+         stale result back */
+      gen: 0,
       wantPlay: true,
       run: null
     };
@@ -652,11 +657,18 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       this.currentTime + WINDOW_AHEAD
     );
     if (!s.done && !s.pulling && s.covered < horizon) {
+      // the stream revision at post time; the element can take the state
+      // over without the decoder while the pull runs (a seek to the
+      // finished end) and a result from before that must not land
+      const gen = s.gen;
       s.pulling = s.session.pullUntil(horizon).then(r => {
         if (this.stream !== s) {
           return; // superseded
         }
         s.pulling = null;
+        if (s.gen !== gen) {
+          return; // the element moved the state on; its state stands
+        }
         s.covered = r.covered;
         s.done = r.done;
         if (s.done && s.duration === null) {
@@ -690,8 +702,11 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     }
     /* a stream that played to its end has no chunk left at its playhead
        (the decoded window is half-open) and nothing left to decode; it
-       restarts from the beginning like the buffer mode does */
-    if (s.done && this.#chunkAt(this.stat.stop) === null) {
+       restarts from the beginning like the buffer mode does. The end of a
+       known duration counts as finished even without the done flag: no
+       chunk can ever contain the end position */
+    if ((s.done || (s.duration !== null && this.stat.stop >= s.duration)) &&
+        this.#chunkAt(this.stat.stop) === null) {
       this.#seekStream(0);
       return;
     }
@@ -729,6 +744,27 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     this.stat.stop = target;
     s.wantPlay = true;
 
+    /* a seek that lands at the end of a known track has nothing left to
+       decode or play: no chunk can contain the end position (the decoded
+       window is half-open) and no pull can run (the horizon is clamped to
+       the duration that the coverage is set to), so a decoder re-cue would
+       stall the stream at its destination forever. The finished state is
+       entered directly instead, exactly like the natural end of the last
+       source does: the ended signal fires and Play restarts from the
+       beginning */
+    if (s.duration !== null && target >= s.duration) {
+      // the chunks of the old position do not reach the end; a later seek
+      // back re-cues the decoder instead of resuming a stale window, and
+      // the revision bump voids a pull or a seek still in flight
+      s.gen += 1;
+      s.chunks = [];
+      s.covered = s.duration;
+      s.done = true;
+      this.dispatchEvent(new Event('pause'));
+      this.dispatchEvent(new Event('ended'));
+      return;
+    }
+
     const hit = this.#chunkAt(target);
     if (hit) {
       // the window covers the position; no decoder round trip is needed
@@ -742,11 +778,15 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     // while another one is re-cuing simply chains behind it (the wrapper
     // matches the responses in order and the stale chunks are dropped by
     // their epoch), which keeps the newest target from being lost
+    const gen = s.gen;
     s.seeking = s.session.seek(target).then(() => {
       if (this.stream !== s) {
         return;
       }
       s.seeking = null;
+      if (s.gen !== gen) {
+        return; // the element moved the state on (a seek to the end)
+      }
       // the chunks of the old position are invalid; the new epoch delivers
       // fresh ones from the target on
       s.chunks = [];
@@ -759,6 +799,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         return;
       }
       s.seeking = null;
+      if (s.gen !== gen) {
+        return; // the element moved the state on; the newer seek stands
+      }
       if (e.message === 'SEEK_FAILED') {
         // the input cannot jump there (a download that has not reached
         // the position); fall back to where the track was, playing or paused
