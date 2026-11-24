@@ -9,6 +9,8 @@
      - an in-window seek: the run restarts inside the covering chunk
      - an out-of-window seek: the decoder session is re-cued
      - the end of the stream: the last source reports ended
+     - the play button after the end: the spent stream replays from the
+       origin like the buffer mode does
      - starvation: the run stops where the audio ran out and recovers
 
    Run: node dev/tests/audio-view-scheduler.cjs */
@@ -230,6 +232,29 @@ const run = async () => {
     throw Error('the playhead after the end is ' + el.currentTime);
   }
   console.log('end ok: pause + ended at', el.currentTime);
+
+  /* the play button after the natural end: a fully consumed stream has no
+     chunk left at its playhead (the window is half-open), so the resume
+     must restart the track from its origin like the buffer mode does */
+  {
+    const seeks = world.seekCalls.length;
+    const from = world.events.length;
+    world.scheduled.length = 0;
+    el.toggle();
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    if (world.seekCalls.length !== seeks + 1 || world.seekCalls[seeks] !== 0) {
+      throw Error('the ended stream was not re-cued to the origin: ' + JSON.stringify(world.seekCalls));
+    }
+    if (world.events.indexOf('play', from) === -1) {
+      throw Error('the play button did not restart the ended stream: ' + JSON.stringify(world.events.slice(from)));
+    }
+    const replay = world.scheduled[0].started;
+    if (replay.offset !== 0) {
+      throw Error('the replay starts at chunk offset ' + replay.offset);
+    }
+    console.log('play-after-end ok: the ended stream replays from the origin');
+  }
 
   /* starvation: the clock runs past the scheduled chain and the run
      recovers where the audio ran out */

@@ -672,6 +672,13 @@ Use Meta + Arrow Up/Down to seek 30%">
     if (!s) {
       return;
     }
+    /* a stream that played to its end has no chunk left at its playhead
+       (the decoded window is half-open) and nothing left to decode; it
+       restarts from the beginning like the buffer mode does */
+    if (s.done && this.#chunkAt(this.stat.stop) === null) {
+      this.#seekStream(0);
+      return;
+    }
     s.wantPlay = true;
     this.#scheduleRun();
     this.#maintain();
