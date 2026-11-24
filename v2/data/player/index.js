@@ -111,6 +111,10 @@ const format = (bytes, decimals) => {
 const cache = new Map();
 const CACHE_LIMIT = 256 * 1024 * 1024;   // max bytes of decoded PCM to keep
 const PREFETCH_LIMIT = 16 * 1024 * 1024; // do not prefetch inputs bigger than this
+/* inputs above this size (and every network track) are decoded incrementally:
+   their bytes are read on demand and only a window around the playhead is
+   kept decoded, so a large input never hangs the player */
+const STREAM_LIMIT = PREFETCH_LIMIT;
 
 const decodedBytes = decoded => {
   const b = decoded.audioBuffer;
@@ -295,25 +299,19 @@ const play = () => {
     return done(file, () => audio.playDecoded(cached));
   }
 
+  // a large local track and every network track decode incrementally: the
+  // input is never read as a whole and only a window around the playhead
+  // stays decoded
   if (file.href) {
-    get(file.href, (s, m) => {
-      let msg = 'Buffering ';
-
-      msg += format(s, 1);
-
-      if (m) {
-        msg += ' / ' + format(m, 1);
-        msg += ' [' + (s / m * 100).toFixed(1) + '%]';
-      }
-      document.title = msg + '...';
-    }).then(buffer => {
-      // the track was switched while the input was downloading
-      if (audio.file === file) {
-        done(file, () => audio.play(buffer));
-      }
-    }).catch(e => alert(e.message));
+    return done(file, () => audio.playStream({href: file.href}));
   }
-  else {
+  if (file.size && file.size > STREAM_LIMIT) {
+    return done(file, () => audio.playStream({file}));
+  }
+
+  // a small local file keeps the whole-file path: its decoded result is
+  // cached and the track transitions stay instant
+  {
     const reader = new FileReader();
     reader.onload = () => {
       if (audio.file === file) {
@@ -650,13 +648,15 @@ document.addEventListener('click', () => {
     }
   });
 
-  /* render the known information of `file`; `known` is the decoded result of
-     the track and null while it is still unknown */
+  /* render the known information of `file`; `known` describes what is
+     decoded already: {audioBuffer, meta, duration} or null while it is
+     still unknown */
   const renderMetadata = (file, known) => {
     grid.textContent = '';
 
     const m = (known && known.meta) || {};
     const b = known && known.audioBuffer;
+    const duration = known ? (known.duration || (b ? b.duration : 0)) : 0;
     const row = (label, value) => {
       const l = document.createElement('span');
       l.textContent = label;
@@ -668,7 +668,7 @@ document.addEventListener('click', () => {
     row('Track', file.name);
     row('Source', file.href || (file.locked ? 'Local File (read permission needed)' : 'Local File'));
     row('Size', file.size ? format(file.size, 1) : '-');
-    row('Duration', b ? htime(b.duration) : '-');
+    row('Duration', duration ? htime(duration) : '-');
     row('Codec Name', m['Codec Name'] || '-');
     row('Codec Long Name', m['Codec Long Name'] || '-');
     row('Sample Format', m['Sample Format'] || '-');
@@ -679,13 +679,32 @@ document.addEventListener('click', () => {
     row('LIBAVFORMAT Version', m['LIBAVFORMAT Version'] || '-');
   };
 
+  /* everything that is known about the current track: its cached decode, or
+     the live state of the audio view (a whole-file buffer or a streaming
+     window with its demuxed metadata) */
+  const knownOf = file => {
+    const cached = cache.get(file);
+    if (cached) {
+      return {
+        audioBuffer: cached.audioBuffer,
+        meta: cached.meta || {},
+        duration: cached.audioBuffer.duration
+      };
+    }
+    if (file === audio.file && (audio.audioBuffer || audio.stream)) {
+      return {
+        audioBuffer: audio.audioBuffer || null,
+        meta: audio.meta || {},
+        duration: audio.audioBuffer ? audio.audioBuffer.duration : (audio.stream ? audio.stream.duration : null)
+      };
+    }
+    return null;
+  };
+
   // the open dialog is refreshed when the decode of the current track ends
   audio.addEventListener('loadedmetadata', () => {
     if (metaJob.file === audio.file && metadata.open) {
-      renderMetadata(audio.file, {
-        audioBuffer: audio.audioBuffer,
-        meta: audio.meta || {}
-      });
+      renderMetadata(audio.file, knownOf(audio.file));
       status.textContent = '';
       status.hidden = true;
     }
@@ -752,10 +771,7 @@ document.addEventListener('click', () => {
     metaJob.token += 1;
     const token = metaJob.token;
 
-    const known = cache.get(target) || (target === audio.file && audio.audioBuffer ? {
-      audioBuffer: audio.audioBuffer,
-      meta: audio.meta || {}
-    } : null);
+    const known = knownOf(target);
 
     renderMetadata(target, known);
     status.textContent = '';
@@ -773,19 +789,52 @@ document.addEventListener('click', () => {
       return;
     }
 
-    // decode the track on demand; the `meta` worker never delays a playback
+    // a large track or a network track is never read as a whole for its
+    // metadata: the streaming demuxer reads the header of the input only
+    // and no sample is decoded
+    if (target.href || (target.size && target.size > STREAM_LIMIT)) {
+      metaJob.decoding = true;
+      status.textContent = 'Reading the stream...';
+      status.hidden = false;
+
+      try {
+        const session = await decoder.open(target.href ? {
+          href: target.href,
+          owner: 'meta'
+        } : {
+          file: target,
+          owner: 'meta'
+        });
+        if (metaJob.token !== token) {
+          session.close().catch(() => {});
+          return;
+        }
+        metaJob.decoding = false;
+        renderMetadata(target, {
+          meta: session.meta,
+          duration: session.meta['Duration']
+        });
+        status.textContent = '';
+        status.hidden = true;
+        session.close().catch(() => {});
+      }
+      catch (e) {
+        metaJob.decoding = false;
+        // the dialog was closed or another track was asked for
+        if (metaJob.token !== token || e.message === 'CANCELED') {
+          return;
+        }
+        status.textContent = 'Cannot read this track (' + (e.message || e) + ')';
+        status.hidden = false;
+      }
+      return;
+    }
+
+    // a small local file is decoded on demand; the `meta` worker never
+    // delays a playback and its decoded result is kept so that the track
+    // starts instantly afterwards
     metaJob.decoding = true;
-    const input = target.href ? get(target.href, (s, m) => {
-      if (metaJob.token !== token) {
-        return;
-      }
-      let msg = 'Buffering ' + format(s, 1);
-      if (m) {
-        msg += ' / ' + format(m, 1);
-        msg += ' [' + (s / m * 100).toFixed(1) + '%]';
-      }
-      status.textContent = msg + '...';
-    }) : new Promise((resolve, reject) => {
+    const input = new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
       reader.onerror = () => reject(reader.error);
@@ -851,7 +900,7 @@ document.addEventListener('click', () => {
     }
     if (i === (audio.i || 0)) {
       // the current track; resume it when it is paused
-      if (!audio.source && audio.audioBuffer) {
+      if (!audio.source && audio.ready) {
         audio.play();
       }
       return;

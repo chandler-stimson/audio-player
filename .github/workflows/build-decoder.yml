@@ -16,7 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
-      image: emscripten/emsdk:latest
+      # pinned to the version that the checked-in binaries were built with
+      image: emscripten/emsdk:3.1.61
     steps:
       - name: Install build dependencies
         run: apt-get update && apt-get install -y git make pkg-config

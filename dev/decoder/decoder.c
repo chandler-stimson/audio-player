@@ -23,8 +23,10 @@
  *   Module.seekInput(offset, whence) -> double   new position or negative;
  *        whence is SEEK_SET(0)/SEEK_CUR(1)/SEEK_END(2) or AVSEEK_SIZE
  *        (0x10000, must return the total size of the input)
- *   Module.onpcm(ptr, samples, channels)   a decoded chunk, laid out planar:
- *        [channel 0 x `samples` floats][channel 1 x `samples` floats]...
+ *   Module.onpcm(ptr, samples, channels, pts)   a decoded chunk, laid out
+ *        planar: [channel 0 x `samples` floats][channel 1 x `samples` floats]...
+ *        `pts` is the presentation time of its first sample in seconds
+ *        relative to the file start, or -1 when unknown
  *
  * The batch entry point `decoder(filename)` is kept for compatibility; it
  * reads a file from the emscripten file system and writes `channel_N` files
@@ -49,13 +51,15 @@
 #define DECODER_HAVE_PCM    1  /* a chunk was emitted through Module.onpcm   */
 #define DECODER_NEED_INPUT  2  /* the input queue is starved; feed more bytes */
 #define DECODER_DONE        3  /* end of stream; all frames were emitted     */
+#define DECODER_READ_ERROR 4  /* the demuxer cannot advance although input
+                                 is ready; the host must resync or give up  */
 
 /* batch mode write buffering */
 #define PCM_BUFFER_FLOATS 8192
 
 FILE **outFiles = NULL;        /* batch mode: one output file per channel   */
 static float **pcmBuffers = NULL;
-static int pcmBufferUsed = 0;  /* floats used in every per-channel buffer   */
+static int *pcmBufferUsed = NULL; /* floats used in each per-channel buffer */
 static int pcmBufferChannels = 0;
 
 /* streaming mode state */
@@ -70,6 +74,7 @@ static AVPacket packet;
 static int audioStreamIndex = -1;
 static int channels = 0;
 static AVIOContext *io = NULL;
+static int readErrors = 0;      /* consecutive unreadable packets            */
 
 void done(int code, const char *msg) {
     EM_ASM({
@@ -150,19 +155,21 @@ float getSample(const AVCodecContext* codecCtx, uint8_t* buffer, int sampleIndex
 /* ------------------------------------------------------------------ batch mode */
 
 static void flushChannels(void) {
-    if (pcmBufferUsed > 0) {
-        for (int c = 0; c < pcmBufferChannels; ++c) {
-            fwrite(pcmBuffers[c], sizeof(float), pcmBufferUsed, outFiles[c]);
+    for (int c = 0; c < pcmBufferChannels; ++c) {
+        if (pcmBufferUsed[c] > 0) {
+            fwrite(pcmBuffers[c], sizeof(float), pcmBufferUsed[c], outFiles[c]);
+            pcmBufferUsed[c] = 0;
         }
-        pcmBufferUsed = 0;
     }
 }
 
 static void pushSample(int channel, float sample) {
-    if (pcmBufferUsed >= PCM_BUFFER_FLOATS) {
+    if (pcmBufferUsed[channel] >= PCM_BUFFER_FLOATS) {
+        /* the channels fill in lockstep, so flushing one flushes all and
+           keeps the output files aligned */
         flushChannels();
     }
-    pcmBuffers[channel][pcmBufferUsed++] = sample;
+    pcmBuffers[channel][pcmBufferUsed[channel]++] = sample;
 }
 
 /**
@@ -236,9 +243,14 @@ static void handleFrameStreaming(const AVCodecContext* cc, const AVFrame* fr) {
         }
     }
 
+    const AVRational tb = formatCtx->streams[audioStreamIndex]->time_base;
+    /* -1 marks an unknown timestamp; the JS side falls back to counting
+       samples for such frames */
+    const double pts = (fr->pts != AV_NOPTS_VALUE) ? fr->pts * av_q2d(tb) : -1.0;
+
     EM_ASM({
-      Module.onpcm($0, $1, $2);
-    }, scratch, nb, ch);
+      Module.onpcm($0, $1, $2, $3);
+    }, scratch, nb, ch, pts);
 }
 
 /**
@@ -397,6 +409,20 @@ int decoder_open(void) {
 
     avformat_find_stream_info(formatCtx, NULL);
 
+    /* the total duration and the timestamp offset of the first sample let
+       the JS side map positions and seek targets without decoding the whole
+       file; a demuxer that cannot tell yet simply omits them */
+    if (formatCtx->duration != AV_NOPTS_VALUE && formatCtx->duration > 0) {
+        EM_ASM({
+          Module.meta['Duration'] = $0;
+        }, (double)formatCtx->duration / AV_TIME_BASE);
+    }
+    if (formatCtx->start_time != AV_NOPTS_VALUE && formatCtx->start_time > 0) {
+        EM_ASM({
+          Module.meta['Start Time'] = $0;
+        }, (double)formatCtx->start_time / AV_TIME_BASE);
+    }
+
     audioStreamIndex = findAudioStream(formatCtx);
     if (audioStreamIndex == -1) {
         done(2, "none of the available streams are audio streams");
@@ -428,6 +454,9 @@ int decoder_open(void) {
  *   DECODER_HAVE_PCM   a chunk was emitted through Module.onpcm; call again
  *   DECODER_NEED_INPUT the input queue is starved; push more bytes first
  *   DECODER_DONE       the stream ended and the decoder is fully drained
+ *   DECODER_READ_ERROR the demuxer cannot advance although input is ready
+ *                     (a seek beyond what the input serves, a corrupt
+ *                     region); the host resyncs or gives up
  */
 int decoder_pull(void) {
     if (!streaming || !codecCtx) {
@@ -474,10 +503,18 @@ int decoder_pull(void) {
             continue;
         }
         if (readErr != 0) {
+            /* a demuxer can fail persistently while the input stays ready
+               (the sample it wants lies beyond what the input serves, or a
+               region is corrupt); keep going for a bounded number of tries
+               and let the host resync instead of spinning in wasm */
+            if (++readErrors > 64) {
+                return DECODER_READ_ERROR;
+            }
             // unreadable packet; skip it and keep going
             av_packet_unref(&packet);
             continue;
         }
+        readErrors = 0;
 
         if (packet.stream_index == audioStreamIndex) {
             int sendErr = avcodec_send_packet(codecCtx, &packet);
@@ -500,12 +537,23 @@ int decoder_seek(double seconds) {
     if (!streaming || !formatCtx || audioStreamIndex == -1) {
         return -1;
     }
+    /* avformat_seek_file takes its target in the time base of the passed
+       stream index when the index is set, not in AV_TIME_BASE units (the
+       original 0.1.2-derived code passed microseconds there and landed far
+       off for most containers); the demuxer timestamps of the stream also
+       start at `start_time`, not at zero */
+    const AVStream *st = formatCtx->streams[audioStreamIndex];
+    const int64_t base = (formatCtx->start_time != AV_NOPTS_VALUE) ?
+        formatCtx->start_time : 0;
+    const int64_t target = base + (int64_t)(seconds * AV_TIME_BASE);
+    const int64_t ts = av_rescale_q(target, AV_TIME_BASE_Q, st->time_base);
     if (avformat_seek_file(formatCtx, audioStreamIndex,
-            INT64_MIN, (int64_t)(seconds * AV_TIME_BASE), INT64_MAX, 0) < 0) {
+            INT64_MIN, ts, INT64_MAX, 0) < 0) {
         return -1;
     }
     avcodec_flush_buffers(codecCtx);
     draining = 0;
+    readErrors = 0;
     return 0;
 }
 
@@ -622,7 +670,8 @@ int decoder(const char *filename) {
     // initialize output buffers; each file stores PCM data of its channel
     outFiles = malloc(channels * sizeof(FILE *));
     pcmBuffers = malloc(channels * sizeof(float *));
-    pcmBufferUsed = 0;
+    /* the per-channel used counters start at zero */
+    pcmBufferUsed = calloc(channels, sizeof(int));
     pcmBufferChannels = channels;
     for(int c = 0; c < channels; ++c) {
         char name[20];
@@ -718,9 +767,10 @@ int decoder(const char *filename) {
     }
     free(outFiles);
     free(pcmBuffers);
+    free(pcmBufferUsed);
     outFiles = NULL;
     pcmBuffers = NULL;
-    pcmBufferUsed = 0;
+    pcmBufferUsed = NULL;
     pcmBufferChannels = 0;
 
     done(err, "NA");
