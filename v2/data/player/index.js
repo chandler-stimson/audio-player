@@ -1299,13 +1299,17 @@ const addTracks = async files => {
     ], file.name, n, false).insert();
   }
 
+  /* remember the newly added tracks (best effort; never blocks the
+     playback); the save is queued before the play below queues the first of
+     them as the playing one, so a copy that is restoring right now never
+     sees a playing record without its list record and cleans it up as a
+     leftover */
+  remember.save(incoming);
+
   if (audio.files.length) {
     play();
     audio.focus();
   }
-
-  // remember the newly added tracks (best effort; never blocks the playback)
-  remember.save(incoming);
 };
 
 /* the additions run one after another and never before the remembered

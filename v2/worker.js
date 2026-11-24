@@ -126,43 +126,100 @@ chrome.runtime.onMessage.addListener((request, sender) => {
   chrome.runtime.onStartup.addListener(once);
 }
 
+/* two records describe the same track when they point to the same link or
+   the same local file; a stored handle is a fresh structured clone, so only
+   `isSameEntry` can compare it with another handle; the player page compares
+   its records the same way */
+const same = async (a, b) => {
+  if (a.kind !== b.kind) {
+    return false;
+  }
+  if (a.kind === 'file') {
+    try {
+      return await a.handle.isSameEntry(b.handle);
+    }
+    catch (e) {
+      return false;
+    }
+  }
+  return a.href === b.href;
+};
+
 /* the remembered tracks are stored by the player page in IndexedDB; shrink
-   or clear them here so that a reduced preference is effective even when the
-   player window is closed */
+   or clear them here so that a reduced preference is effective even when
+   the player window is closed */
 const enforce = async n => {
   try {
-    const r = indexedDB.open('audio-player', 1);
-    // use the same schema as the player page
-    r.onupgradeneeded = () => {
-      if (r.result.objectStoreNames.contains('tracks') === false) {
-        r.result.createObjectStore('tracks');
-      }
-    };
-    const database = await new Promise((resolve, reject) => {
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
-    });
-    if (database.objectStoreNames.contains('tracks') === false) {
-      return;
-    }
-
-    const t = database.transaction('tracks', 'readwrite');
-    const os = t.objectStore('tracks');
-    t.onabort = () => console.warn('CANNOT_ENFORCE_TRACKS', t.error);
-    if (n === 0) {
-      os.clear();
-    }
-    else {
-      const req = os.get('list');
-      req.onsuccess = () => {
-        const record = req.result;
-        if (record && record.list && record.list.length > n) {
-          os.put({
-            list: record.list.slice(-n)
-          }, 'list');
+    /* the player page saves and trims its tracks under the same lock, so
+       the shrink below cannot interleave with a save and be undone by it */
+    await navigator.locks.request('audio-player-tracks', async () => {
+      const r = indexedDB.open('audio-player', 1);
+      // use the same schema as the player page
+      r.onupgradeneeded = () => {
+        if (r.result.objectStoreNames.contains('tracks') === false) {
+          r.result.createObjectStore('tracks');
         }
       };
-    }
+      const database = await new Promise((resolve, reject) => {
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      if (database.objectStoreNames.contains('tracks') === false) {
+        return;
+      }
+
+      if (n === 0) {
+        await new Promise((resolve, reject) => {
+          const t = database.transaction('tracks', 'readwrite');
+          t.objectStore('tracks').clear();
+          t.oncomplete = () => resolve();
+          t.onabort = () => reject(t.error || Error('ABORTED'));
+        });
+        return;
+      }
+
+      /* the record of the playing track is dropped when its track is
+         trimmed out, just like the player page drops it; `isSameEntry`
+         cannot run inside a transaction because the await commits it, so
+         the keys are read first and the survivors are written back
+         afterwards while the lock keeps the other writers out */
+      const stored = await new Promise((resolve, reject) => {
+        const t = database.transaction('tracks', 'readonly');
+        const os = t.objectStore('tracks');
+        const list = os.get('list');
+        const current = os.get('current');
+        t.oncomplete = () => resolve({
+          list: (list.result && list.result.list) || [],
+          current: current.result || null
+        });
+        t.onabort = () => reject(t.error || Error('ABORTED'));
+      });
+      if (stored.list.length <= n) {
+        return;
+      }
+      const kept = stored.list.slice(-n);
+
+      let found = false;
+      if (stored.current) {
+        for (const record of kept) {
+          if (await same(stored.current, record)) {
+            found = true;
+            break;
+          }
+        }
+      }
+
+      await new Promise((resolve, reject) => {
+        const t = database.transaction('tracks', 'readwrite');
+        const os = t.objectStore('tracks');
+        os.put({list: kept}, 'list');
+        if (stored.current && found === false) {
+          os.delete('current');
+        }
+        t.oncomplete = () => resolve();
+        t.onabort = () => reject(t.error || Error('ABORTED'));
+      });
+    });
   }
   catch (e) {
     console.warn('CANNOT_ENFORCE_TRACKS', e);
