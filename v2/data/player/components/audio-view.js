@@ -366,11 +366,20 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         href,
         owner: 'user',
         onchunk: chunk => this.#onchunk(chunk, token),
-        onstop: () => {
-          // the session was preempted (another track plays) or crashed
-          if (this.session === token) {
-            this.#stopRun();
+        onstop: e => {
+          // the session was preempted (another track plays) or it failed
+          if (this.session !== token) {
+            return; // a different playback session owns the element
           }
+          /* a preemption merely stops the run: the superseding session
+             resets the element on its own; a failure before the stream
+             was built is reported by the open call itself */
+          if (!e || e.message === 'CANCELED' || !this.stream) {
+            this.#stopRun();
+            return;
+          }
+          // a real failure killed the worker-side decoder state
+          this.#failStream(e);
         }
       });
     }
@@ -411,6 +420,10 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
          end), so that a pull or a seek still in flight cannot write its
          stale result back */
       gen: 0,
+      /* the error that killed the session before the input was fully
+         decoded; a failed stream can no longer decode, seek, resume or
+         end, and every use reports the failure again */
+      failed: null,
       wantPlay: true,
       run: null
     };
@@ -483,7 +496,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
      contiguous chunks so that the playback stays sample-accurate */
   #scheduleRun() {
     const s = this.stream;
-    if (!s || !s.wantPlay) {
+    // a failed stream must not restart: a run would replay its buffered
+    // window and starve right after (the dead session delivers nothing)
+    if (!s || s.failed || !s.wantPlay) {
       return;
     }
     const context = this.context || decoder.context();
@@ -634,11 +649,38 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     }
   }
 
+  /* the decoder session of the stream died without a pull or a seek in
+     flight that would report it (a crashed worker, a decode error between
+     two commands): freeze the playhead where the audio actually is — a
+     mere #stopRun would leave the stale cue of `stat.stop` behind and the
+     next maintenance pass would restart the run there, replaying the
+     buffered window — then quiesce the stream, because every later command
+     to the dead session only answers CANCELED, and report the failure like
+     the open/pull/seek paths do */
+  #failStream(e) {
+    const s = this.stream;
+    if (!s || s.failed) {
+      return;
+    }
+    const context = this.context || decoder.context();
+    if (s.run && context.state === 'running') {
+      this.stat.stop = Math.max(0, Math.min(s.duration || Infinity, context.currentTime - this.stat.start));
+    }
+    s.failed = e;
+    s.wantPlay = false;
+    this.#stopRun();
+    this.dispatchEvent(new CustomEvent('error', {
+      detail: e.message
+    }));
+  }
+
   /* keep the decoded window around the playhead: pull ahead, evict behind
      and recover a starved run */
   #maintain() {
     const s = this.stream;
-    if (!s) {
+    // a failed stream has nothing to maintain: its session is gone and the
+    // window would only be churned without ever being filled again
+    if (!s || s.failed) {
       return;
     }
     const context = this.context || decoder.context();
@@ -708,6 +750,11 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
           return;
         }
         s.pulling = null;
+        // the wrapper fails a pending pull before it calls onstop, so the
+        // failure is reported already by the time this rejection runs
+        if (s.failed) {
+          return;
+        }
         if (e.message !== 'CANCELED') {
           console.info('Streaming Pull Failed', e);
           this.#stopRun();
@@ -723,6 +770,14 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
   #resume() {
     const s = this.stream;
     if (!s) {
+      return;
+    }
+    if (s.failed) {
+      // the decoder state behind the stream is gone; only a fresh selection
+      // of the track can play it again
+      this.dispatchEvent(new CustomEvent('error', {
+        detail: s.failed.message
+      }));
       return;
     }
     /* a stream that played to its end has no chunk left at its playhead
@@ -761,6 +816,13 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
   #seekStream(v) {
     const s = this.stream;
     if (!s) {
+      return;
+    }
+    if (s.failed) {
+      // the decoder state behind the stream is gone; the seek cannot run
+      this.dispatchEvent(new CustomEvent('error', {
+        detail: s.failed.message
+      }));
       return;
     }
     const wasPlaying = s.wantPlay;
@@ -828,6 +890,11 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         return;
       }
       s.seeking = null;
+      // the wrapper fails a pending seek before it calls onstop, so the
+      // failure is reported already by the time this rejection runs
+      if (s.failed) {
+        return;
+      }
       if (s.gen !== gen) {
         return; // the element moved the state on; the newer seek stands
       }
