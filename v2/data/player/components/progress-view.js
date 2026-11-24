@@ -9,6 +9,11 @@ class ProgressView extends HTMLElement {
         #parent {
           background-color: var(--box-bg-color, #eaeaea);
           height: var(--height, 2px);
+          /* an opt-in taller click zone; the paint stays on the thin
+             content box */
+          padding-top: var(--hit-padding, 0px);
+          padding-bottom: var(--hit-padding, 0px);
+          background-clip: content-box;
           display: flex;
           position: relative;
           cursor: pointer;

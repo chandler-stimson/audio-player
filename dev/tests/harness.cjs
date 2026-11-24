@@ -18,6 +18,7 @@ const {startWorker, makeFile} = require('./fake-worker.cjs');
 
 const DECODER_DIR = path.resolve(__dirname, '../../v2/data/player/decoder');
 const AUDIO_VIEW = path.resolve(__dirname, '../../v2/data/player/components/audio-view.js');
+const VOLUME_VIEW = path.resolve(__dirname, '../../v2/data/player/components/volume-view.js');
 
 /* --------------------------------------------------- a tiny 44100 Hz stereo WAV */
 
@@ -176,11 +177,11 @@ const makeAudioViewWorld = () => {
   return world;
 };
 
-/* --------------------------------------------------------- the real audio view */
+/* ------------------------------------------------------------------ stub DOM */
 
-/* loads the real audio-view.js into a fresh context bound to a world; the
-   decoder that it reads is the one of the caller */
-const loadAudioView = ({decoder, world}) => {
+/* the fake element that the shadow queries of a loaded component return;
+   it records the listeners, the seek calls and the attribute writes */
+const makeElementFactory = () => {
   const elements = {};
   const element = id => {
     if (!elements[id]) {
@@ -188,43 +189,59 @@ const loadAudioView = ({decoder, world}) => {
         handlers: {},
         textContent: '',
         percent: 0,
+        volume: 0,
         addEventListener(type, fn) {
           this.handlers[type] = fn;
         },
         seek(pct) {
           this.percent = pct;
         },
-        setAttribute() {},
+        setAttribute(name, value) {
+          (this.attributes || (this.attributes = {}))[name] = value;
+        },
         getAttribute() {
           return null;
-        }
+        },
+        toggleMute() {}
       };
     }
     return elements[id];
   };
+  return {element, elements};
+};
 
-  class HTMLElement {
-    constructor() {
-      this.handlers = {};
-      const shadow = {
-        set innerHTML(v) {},
-        addEventListener() {},
-        getElementById: element
-      };
-      this.attachShadow = () => shadow;
-      this.shadowRoot = shadow;
-    }
-    addEventListener(type, fn) {
-      (this.handlers[type] = this.handlers[type] || []).push(fn);
-    }
-    dispatchEvent(e) {
-      world.events.push(e.type);
-      for (const fn of this.handlers[e.type] || []) {
-        fn(e);
-      }
-      return true;
-    }
+/* the fake HTMLElement that a loaded component class extends; the events
+   array of the caller collects every dispatch */
+const makeHTMLElementClass = ({element, events}) => class HTMLElement {
+  constructor() {
+    this.handlers = {};
+    const shadow = {
+      set innerHTML(v) {},
+      addEventListener() {},
+      getElementById: element
+    };
+    this.attachShadow = () => shadow;
+    this.shadowRoot = shadow;
   }
+  addEventListener(type, fn) {
+    (this.handlers[type] = this.handlers[type] || []).push(fn);
+  }
+  dispatchEvent(e) {
+    events.push(e.type);
+    for (const fn of this.handlers[e.type] || []) {
+      fn(e);
+    }
+    return true;
+  }
+};
+
+/* --------------------------------------------------------- the real audio view */
+
+/* loads the real audio-view.js into a fresh context bound to a world; the
+   decoder that it reads is the one of the caller */
+const loadAudioView = ({decoder, world}) => {
+  const {element} = makeElementFactory();
+  const HTMLElement = makeHTMLElementClass({element, events: world.events});
 
   const ctx = {
     console,
@@ -272,9 +289,50 @@ const loadAudioView = ({decoder, world}) => {
   return ctx;
 };
 
+/* --------------------------------------------------------- the real volume view */
+
+/* loads the real volume-view.js into a fresh context; the shadow queries of
+   the component return the generic stubs of the element factory */
+const loadVolumeView = () => {
+  const events = [];
+  const {element, elements} = makeElementFactory();
+  const HTMLElement = makeHTMLElementClass({element, events});
+
+  const ctx = {
+    console,
+    Event: class {
+      constructor(type) {
+        this.type = type;
+      }
+    },
+    CustomEvent: class {
+      constructor(type, o) {
+        this.type = type;
+        this.detail = o && o.detail;
+      }
+    },
+    HTMLElement,
+    document: undefined,
+    window: {
+      customElements: {
+        define(name, cls) {
+          ctx.VolumeViewClass = cls;
+        }
+      }
+    }
+  };
+  ctx.self = ctx;
+  vm.createContext(ctx);
+
+  new vm.Script(fs.readFileSync(VOLUME_VIEW), {filename: 'volume-view.js'}).runInContext(ctx);
+
+  return {VolumeViewClass: ctx.VolumeViewClass, element, elements, events};
+};
+
 module.exports = {
   DECODER_DIR,
   AUDIO_VIEW,
+  VOLUME_VIEW,
   expectedSample,
   makeWav,
   makeFile,
@@ -282,5 +340,6 @@ module.exports = {
   makeWorkerClass,
   loadWrapper,
   makeAudioViewWorld,
-  loadAudioView
+  loadAudioView,
+  loadVolumeView
 };

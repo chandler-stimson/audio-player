@@ -51,25 +51,23 @@ class AudioView extends HTMLElement {
           --progress-bg-color: #000;
         }
         ::slotted(*),
-        #volume,
         #parent > svg {
           cursor: pointer;
           border-radius: 20px;
           padding: 5px;
         }
         ::slotted(*),
-        #volume > svg,
         #parent > svg {
           height: 20px;
           width: 20px;
         }
         ::slotted(*:hover),
-        #volume:hover,
         #parent > svg:hover {
           background-color: rgba(0, 0, 0, 0.05);
         }
         #progress {
           flex: 1;
+          --hit-padding: 12.5px;
         }
         #parent[mode=play] #play path:nth-child(2) {
           display: none;
@@ -79,32 +77,6 @@ class AudioView extends HTMLElement {
         }
         #parent[mode=nosrc] > svg {
           opacity: 0.2;
-          pointer-events: none;
-        }
-        #volume {
-          display: flex;
-          align-items: center;
-        }
-        #sound {
-          width: 0;
-          padding-left: 0;
-          --percent: 50%;
-          transition: width .5s, padding-left .5s;
-          position: relative;
-        }
-        #volume:hover > #sound {
-          width: 48px;
-          padding-left: 5px;
-        }
-        #volume:hover > #sound:after {
-          content: '';
-          position: absolute;
-          left: 50%;
-          top: 0;
-          width: 1px;
-          height: 5px;
-          background-color: #ccc;
-          z-index: 1;
           pointer-events: none;
         }
       </style>
@@ -121,13 +93,9 @@ class AudioView extends HTMLElement {
 Use Meta + Arrow Left/Right to seek 30 seconds backward/forward"></progress-view>
         <span id="duration">0:00</span>
         <slot name="before-sound"></slot>
-        <div id="volume" title="Use Arrow Up/Down to increase/decrease 10%
-Use Meta + Arrow Up/Down to seek 30%">
-          <progress-view id="sound"></progress-view>
-          <svg viewBox="0 0 48 48">
-            <path d="M14 18v12h8l10 10V8L22 18h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
-          </svg>
-        </div>
+        <volume-view id="volume" title="Click to toggle mute (M)
+Use Arrow Up/Down to increase/decrease 10%
+Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         <slot name="after-sound"></slot>
       </div>
     `;
@@ -137,9 +105,10 @@ Use Meta + Arrow Up/Down to seek 30%">
     };
   }
   connectedCallback() {
-    // prevent open dialog to open on dblclick
+    // prevent open dialog to open on dblclick; the volume view retargets
+    // the clicks of its inner svg to its host, so the guard must catch it
     this.shadowRoot.addEventListener('dblclick', e => {
-      if (e.target.closest('svg')) {
+      if (e.target.closest('svg, #volume')) {
         e.stopPropagation();
       }
     });
@@ -211,11 +180,17 @@ Use Meta + Arrow Up/Down to seek 30%">
         this.volume -= (e.metaKey || e.ctrlKey) ? 0.3 : 0.1;
         this.volume = Math.round(this.volume * 10) / 10;
       }
+      else if (e.code === 'KeyM') {
+        this.shadowRoot.getElementById('volume').toggleMute();
+      }
     });
 
-    const sound = this.shadowRoot.getElementById('sound');
-    sound.addEventListener('seek', e => {
-      this.volume = e.detail / 50;
+    const volume = this.shadowRoot.getElementById('volume');
+    // a change that started inside the volume view re-enters the funnel so
+    // that the gain node and the host reporting stay centralized; the
+    // reflect of the view is silent, so this cannot loop
+    volume.addEventListener('volumechange', e => {
+      this.volume = e.detail;
     });
   }
   static get observedAttributes() {
@@ -871,11 +846,11 @@ Use Meta + Arrow Up/Down to seek 30%">
     }
   }
   get volume() {
-    return this.shadowRoot.getElementById('sound').percent / 50;
+    return this.shadowRoot.getElementById('volume').volume;
   }
   set volume(v) {
     v = Math.max(0, Math.min(2, v));
-    this.shadowRoot.getElementById('sound').seek(v * 50);
+    this.shadowRoot.getElementById('volume').volume = v;
     if (this.sound) {
       this.sound.gain.value = v;
     }
