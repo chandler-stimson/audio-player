@@ -10,10 +10,18 @@ body {
   color: #4d5156;
 }
 audio-view { /* stylelint-disable-line selector-type-no-unknown */
-  outline: none;
   width: 100%;
 
   --bg-color: transparent;
+}
+/* the focus of the host stays visible for the keyboard; a mouse click that
+   lands on it does not paint the ring */
+audio-view:focus { /* stylelint-disable-line selector-type-no-unknown */
+  outline: none;
+}
+audio-view:focus-visible { /* stylelint-disable-line selector-type-no-unknown */
+  outline: 2px solid #4285f4;
+  outline-offset: 2px;
 }
 
 #dummy {
@@ -234,7 +242,7 @@ dialog button:focus-visible {
 #repeat[mode=repeat] path {
   fill: #4285f4;
 }
-#shuffle[active="true"] {
+#shuffle[aria-pressed="true"] {
   fill: #4285f4;
 }
 
@@ -243,7 +251,19 @@ dialog button:focus-visible {
   place-content: center;
 }
 
-[disabled=true] {
+/* the transport icons fill their buttons; the compact browse folder keeps
+   its own size */
+#audio button > svg {
+  height: 20px;
+  width: 20px;
+}
+#audio #browse > svg {
+  height: 14px;
+  width: 14px;
+}
+
+/* the transport buttons that make no sense at the current position */
+#audio button:disabled {
   opacity: 0.2;
   pointer-events: none;
 }

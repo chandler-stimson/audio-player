@@ -48,17 +48,65 @@ class ProgressView extends HTMLElement {
   }
   seek(percent) {
     this.shadowRoot.getElementById('progress').style.setProperty('--percent', percent + '%');
+    this.setAttribute('aria-valuenow', this.value);
   }
   connectedCallback() {
+    // the host is the slider: focusable, named by the consumer and
+    // configurable in its range so that the volume bar can reuse this view
+    this.tabIndex = 0;
+    this.setAttribute('role', 'slider');
+    this.setAttribute('aria-valuemin', this.min);
+    this.setAttribute('aria-valuemax', this.max);
+    if (!isNaN(this.percent)) {
+      this.setAttribute('aria-valuenow', this.value);
+    }
+
     this.shadowRoot.getElementById('parent').addEventListener('click', e => {
       const {width} = e.target.getBoundingClientRect();
       this.dispatchEvent(new CustomEvent('seek', {
         detail: e.offsetX / width * 100
       }));
     });
+    // the slider keyboard; a step moves in percent units and reuses the
+    // seek event so that every consumer keeps its own scale
+    this.addEventListener('keydown', e => {
+      let target = null;
+      if (e.code === 'ArrowRight' || e.code === 'ArrowUp') {
+        target = Math.min(100, this.percent + this.step);
+      }
+      else if (e.code === 'ArrowLeft' || e.code === 'ArrowDown') {
+        target = Math.max(0, this.percent - this.step);
+      }
+      else if (e.code === 'Home') {
+        target = 0;
+      }
+      else if (e.code === 'End') {
+        target = 100;
+      }
+      if (target === null) {
+        return;
+      }
+      e.preventDefault();
+      this.dispatchEvent(new CustomEvent('seek', {
+        detail: target
+      }));
+    });
   }
   get percent() {
     return parseInt(getComputedStyle(this.shadowRoot.getElementById('progress')).getPropertyValue('--percent'));
+  }
+  get min() {
+    return Number(this.getAttribute('min') || 0);
+  }
+  get max() {
+    return Number(this.getAttribute('max') || 100);
+  }
+  get step() {
+    return Number(this.getAttribute('step') || 1);
+  }
+  /* the slider value on the scale of the consumer */
+  get value() {
+    return Math.round((this.min + (this.max - this.min) * this.percent / 100) * 100) / 100;
   }
 }
 window.customElements.define('progress-view', ProgressView);

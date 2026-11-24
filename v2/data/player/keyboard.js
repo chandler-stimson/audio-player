@@ -6,7 +6,7 @@ document.addEventListener('keydown', e => {
     e.stopPropagation();
 
     const d = document.getElementById(name);
-    if (d.hasAttribute('disabled') ? d.getAttribute('disabled') === 'false' : true) {
+    if (!d.disabled) {
       d.dispatchEvent(new Event('click'));
     }
   };

@@ -8,11 +8,11 @@ audio.addEventListener('play', () => {
     title: audio.file.name
   });
   const previous = document.getElementById('previous');
-  navigator.mediaSession.setActionHandler('previoustrack', previous.getAttribute('disabled') === 'true' ? null : () => {
+  navigator.mediaSession.setActionHandler('previoustrack', previous.disabled ? null : () => {
     previous.dispatchEvent(new Event('click'));
   });
   const next = document.getElementById('next');
-  navigator.mediaSession.setActionHandler('nexttrack', next.getAttribute('disabled') === 'true' ? null : () => {
+  navigator.mediaSession.setActionHandler('nexttrack', next.disabled ? null : () => {
     next.dispatchEvent(new Event('click'));
   });
 });

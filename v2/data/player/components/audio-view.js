@@ -49,24 +49,33 @@ class AudioView extends HTMLElement {
           padding: 12px 10px;
           font-size: 13px;
           user-select: none;
-          outline: none;
           --height: 5px;
           --progress-bg-color: #000;
         }
         ::slotted(*),
-        #parent > svg {
+        #parent > button {
           cursor: pointer;
           border-radius: 20px;
           padding: 5px;
         }
-        ::slotted(*),
-        #parent > svg {
+        ::slotted(*:hover),
+        #parent > button:hover {
+          background-color: rgba(0, 0, 0, 0.05);
+        }
+        /* the native button chrome is stripped; the buttons size around
+           their icons so that the padding truly wraps them */
+        ::slotted(button),
+        #parent > button {
+          border: none;
+          background-color: transparent;
+          font: inherit;
+          color: inherit;
+          display: grid;
+          place-content: center;
+        }
+        #parent > button > svg {
           height: 20px;
           width: 20px;
-        }
-        ::slotted(*:hover),
-        #parent > svg:hover {
-          background-color: rgba(0, 0, 0, 0.05);
         }
         #progress {
           flex: 1;
@@ -78,24 +87,25 @@ class AudioView extends HTMLElement {
         #parent:not([mode=play]) #play path:nth-child(1) {
           display: none;
         }
-        #parent[mode=nosrc] > svg,
+        #parent[mode=nosrc] > button,
         #parent[mode=nosrc] ::slotted([slot=before-progress]),
         #parent[mode=nosrc] ::slotted([slot=after-progress]) {
           opacity: 0.2;
           pointer-events: none;
         }
       </style>
-      <div id="parent" mode="nosrc" data-ready=false tabindex="-1">
+      <div id="parent" mode="nosrc" data-ready=false>
         <slot name="before-play"></slot>
-        <svg id="play" viewBox="0 0 48 48">
-          <path d="M16 10v28l22-14z"/>
-          <path d="M12 38h8V10h-8v28zm16-28v28h8V10h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
-          <title>Use Space to toggle play and pause</title>
-        </svg>
+        <button type="button" id="play" aria-label="Play" title="Use Space to toggle play and pause">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M16 10v28l22-14z"/>
+            <path d="M12 38h8V10h-8v28zm16-28v28h8V10h-8z"/><path d="M0 0h48v48H0z" fill="none"/>
+          </svg>
+        </button>
         <slot name="before-stat"></slot>
         <span id="current">0:00</span>
         <slot name="before-progress"></slot>
-        <progress-view id="progress" title="Use Arrow Left/Right to seek 10 seconds backward/forward
+        <progress-view id="progress" aria-label="Seek position" title="Use Arrow Left/Right to seek 10 seconds backward/forward
 Use Meta + Arrow Left/Right to seek 30 seconds backward/forward"></progress-view>
         <slot name="after-progress"></slot>
         <span id="duration">0:00</span>
@@ -118,7 +128,7 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     // prevent open dialog to open on dblclick; the volume view retargets
     // the clicks of its inner svg to its host, so the guard must catch it
     this.shadowRoot.addEventListener('dblclick', e => {
-      if (e.target.closest('svg, #volume')) {
+      if (e.target.closest('button, #volume')) {
         e.stopPropagation();
       }
     });
@@ -140,6 +150,16 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     play.addEventListener('click', () => this.toggle());
     let id;
     const parent = this.shadowRoot.getElementById('parent');
+    /* the play button says what it does; the mode is also written from the
+       outside (the page resets the player), so the observer is the single
+       place that keeps the label in sync */
+    new MutationObserver(() => {
+      const playing = parent.getAttribute('mode') === 'pause';
+      play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    }).observe(parent, {
+      attributes: true,
+      attributeFilter: ['mode']
+    });
     this.addEventListener('pause', () => {
       clearInterval(id);
       parent.setAttribute('mode', 'play');
@@ -164,6 +184,11 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     this.addEventListener('ended', () => progress.seek(100));
 
     this.addEventListener('keydown', e => {
+      // the keys act on the host itself; a key on a focused child control
+      // stays that control's own activation
+      if (e.composedPath()[0] !== this) {
+        return;
+      }
       if (e.code === 'KeyB' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         this.currentTime = 0;
       }

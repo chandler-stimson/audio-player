@@ -31,13 +31,17 @@ const skipWord = n => {
 const applySkip = n => {
   audio.skipPeriod = n;
 
-  // the tooltips follow the preference
+  // the tooltips and the accessible names follow the preference
   const [one, long] = skipWord(n);
   audio.shadowRoot.getElementById('progress').title =
     'Use Arrow Left/Right to seek ' + one.toLowerCase() + ' backward/forward' + '\n' +
     'Use Meta + Arrow Left/Right to seek ' + long.toLowerCase() + ' backward/forward';
-  document.getElementById('skip-back').querySelector('title').textContent = 'Skip ' + one + ' Backward (J)';
-  document.getElementById('skip-forward').querySelector('title').textContent = 'Skip ' + one + ' Forward (L)';
+  const back = document.getElementById('skip-back');
+  const forward = document.getElementById('skip-forward');
+  back.title = 'Skip ' + one + ' Backward (J)';
+  forward.title = 'Skip ' + one + ' Forward (L)';
+  back.setAttribute('aria-label', 'Skip ' + one + ' Backward (J)');
+  forward.setAttribute('aria-label', 'Skip ' + one + ' Forward (L)');
 };
 chrome.storage.local.get({
   'skip-period': 10
@@ -336,8 +340,8 @@ const play = () => {
 
   document.getElementById('view').selectedIndex = i + 1;
 
-  previous.setAttribute('disabled', i === 0);
-  next.setAttribute('disabled', i >= audio.files.length - 1);
+  previous.disabled = i === 0;
+  next.disabled = i >= audio.files.length - 1;
 
   const file = audio.file;
   if (!file) {
@@ -567,7 +571,7 @@ document.getElementById('skip-forward').addEventListener('click', () => {
           navigate('forward');
         }
         else {
-          if (r === 'no-repeat' && next.getAttribute('disabled') === 'false') {
+          if (r === 'no-repeat' && !next.disabled) {
             navigate('forward');
           }
           else if (r === 'repeat' && audio.i === audio.files.length - 1) {
@@ -601,8 +605,13 @@ audio.addEventListener('empty', () => {
   }
 });
 
+/* a click that lands on a real control keeps its focus; a click on
+   non-interactive content returns the focus to the host so that the player
+   shortcuts stay active */
 document.addEventListener('click', () => {
-  audio.focus();
+  if (document.activeElement === document.body) {
+    audio.focus();
+  }
 });
 
 // the player keys only reach the audio view while it is focused; a fresh
@@ -623,10 +632,19 @@ audio.focus();
 // repeat
 {
   const repeat = document.getElementById('repeat');
+  // the accessible name reflects the mode; the tooltip keeps the hint
+  const word = {
+    'no-repeat': 'off',
+    'repeat': 'all',
+    'repeat-one': 'one'
+  };
+  const name = () => 'Repeat: ' + word[repeat.getAttribute('mode')] +
+    ' (Ctrl/Command + Shift + R)';
   repeat.addEventListener('click', () => {
     const mode = repeat.getAttribute('mode');
     const modes = ['no-repeat', 'repeat', 'repeat-one'];
     repeat.setAttribute('mode', modes[(modes.indexOf(mode) + 1) % 3]);
+    repeat.setAttribute('aria-label', name());
   });
 }
 
@@ -636,6 +654,9 @@ audio.focus();
   shuffle.addEventListener('click', () => {
     const active = shuffle.getAttribute('active');
     shuffle.setAttribute('active', active === 'false');
+    // the pressed state follows so that the styling and the announcement
+    // cannot diverge
+    shuffle.setAttribute('aria-pressed', active === 'false');
   });
 }
 
@@ -1111,8 +1132,8 @@ const stopped = () => {
   // the play button must stay usable for the tracks that are left
   const parent = audio.shadowRoot.getElementById('parent');
   parent.setAttribute('mode', (audio.files && audio.files.length) ? 'play' : 'nosrc');
-  previous.setAttribute('disabled', (audio.i || 0) === 0);
-  next.setAttribute('disabled', 'true');
+  previous.disabled = (audio.i || 0) === 0;
+  next.disabled = true;
   title();
 };
 
@@ -1181,8 +1202,8 @@ const removeAt = (index, silent = false) => {
       return;
     }
     // the navigation buttons and the title follow the shorter playlist
-    previous.setAttribute('disabled', (audio.i || 0) === 0);
-    next.setAttribute('disabled', (audio.i || 0) >= audio.files.length - 1);
+    previous.disabled = (audio.i || 0) === 0;
+    next.disabled = (audio.i || 0) >= audio.files.length - 1;
     title();
   }
 };
