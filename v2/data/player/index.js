@@ -317,7 +317,9 @@ const askAccess = (file, e) => {
   status.textContent = e.message || e;
   status.hidden = false;
 
-  // the dialog already pauses the player for another locked track
+  // the player is already silent (the selection retired the old track
+  // before the permission was asked for); an open dialog of another locked
+  // track must not be shown again
   if (grant.open === false) {
     grant.showModal();
   }
@@ -348,7 +350,15 @@ const play = () => {
     return;
   }
 
-  // the track that is playing now is the one that the next launch selects
+  /* the selected track is not playable until its load ends: the read
+     permission of a locked track must be granted first and a small local
+     file must be read first; retiring the track that is playing now keeps
+     a slow or failed load from leaving it running */
+  decoder.cancel('user');
+  audio.reset();
+  audio.session = Math.random();
+
+  // the selected track is the one that the next launch selects
   remember.current(file);
 
   // a remembered local track needs its read permission before it can be
@@ -401,6 +411,16 @@ const play = () => {
     reader.onload = () => {
       if (audio.file === file) {
         done(file, () => audio.play(reader.result));
+      }
+    };
+    // a failed read is reported like a failed decode; the old playback is
+    // already stopped, so the report is the only thing left to do (a read
+    // that belongs to a superseded selection stays silent)
+    reader.onerror = () => {
+      if (audio.file === file) {
+        console.error(reader.error);
+        title('Cannot play: ' + file.name);
+        showError(reader.error.message || reader.error);
       }
     };
     reader.readAsArrayBuffer(file);

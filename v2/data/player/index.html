@@ -101,7 +101,8 @@ Move to the beginning of the current track (Ctrl/Command + Shift + B or Shift + 
 
   <!-- the read access of a remembered local track; the permission prompt of
        the browser needs a user action that the automatic advancement cannot
-       provide, so the player pauses on this dialog instead -->
+       provide, so the advancement stalls on this dialog instead; the old
+       playback is already stopped when the dialog opens -->
   <dialog id="grant" aria-labelledby="grant-title">
     <h1 id="grant-title">Read Access Needed</h1>
     <p id="grant-body"></p>
