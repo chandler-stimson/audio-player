@@ -194,6 +194,7 @@ const makePlayerWorld = () => {
     listeners: {},
     focusCount: 0,
     resetCount: 0,
+    pauseCount: 0,
 
     addEventListener(type, fn) {
       (audio.listeners[type] = audio.listeners[type] || []).push(fn);
@@ -216,6 +217,16 @@ const makePlayerWorld = () => {
     },
     reset() {
       audio.resetCount += 1;
+    },
+    pause() {
+      audio.pauseCount += 1;
+    },
+    // run the registered handlers of one event type (the page fires the
+    // 'ended', 'error' and 'empty' events of the audio view this way)
+    dispatch(type, e = {}) {
+      for (const fn of (audio.listeners[type] || []).slice()) {
+        fn(e);
+      }
     }
   };
 

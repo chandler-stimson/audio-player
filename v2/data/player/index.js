@@ -60,6 +60,19 @@ const title = (msg = '') => {
   }
 };
 
+/* the inline report of a track that cannot be played; a failed decode stops
+   the playback and its reason stays in the report until the user dismisses
+   it or another track starts */
+const errorView = document.getElementById('error');
+const showError = msg => {
+  document.getElementById('error-text').textContent = msg;
+  errorView.hidden = false;
+};
+document.getElementById('error-close').addEventListener('click', () => {
+  errorView.hidden = true;
+  title();
+});
+
 const get = (href, progress, limit) => {
   if (href.startsWith('filesystem:')) { // fetch does not work with this scheme
     return new Promise((resolve, reject) => {
@@ -316,6 +329,9 @@ const play = () => {
   // that just ended scheduled; a slow decode can no longer let it fire
   clearTimeout(advance);
 
+  // starting a track retires the error report of the previous one
+  errorView.hidden = true;
+
   const i = audio.i || 0;
 
   document.getElementById('view').selectedIndex = i + 1;
@@ -538,7 +554,7 @@ document.getElementById('skip-forward').addEventListener('click', () => {
       return Boolean(file && cache.has(file));
     })();
 
-    // a repeated ended or error must not leave an orphaned timer behind
+    // a repeated ended must not leave an orphaned timer behind
     clearTimeout(advance);
     advance = setTimeout(() => {
       const r = document.getElementById('repeat').getAttribute('mode');
@@ -567,8 +583,13 @@ document.getElementById('skip-forward').addEventListener('click', () => {
   };
   audio.addEventListener('error', e => {
     console.error(e);
-    alert(e.detail);
-    m();
+    // a track that cannot be decoded stops the playback; the advancement
+    // logic must not run for a failed track or an unreadable file would be
+    // retried (and re-reported) forever; the user picks the next track
+    clearTimeout(advance);
+    audio.pause();
+    title('Cannot play: ' + (audio.file ? audio.file.name : ''));
+    showError(e.detail);
   });
   audio.addEventListener('ended', () => m());
 }

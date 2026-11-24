@@ -179,6 +179,32 @@ dialog button:focus-visible {
   background-color: #3367d6;
 }
 
+/* the inline report of a track that cannot be played */
+#error:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+}
+/* a long worker message must not stretch the report */
+#error-text {
+  flex: 1;
+  color: #70757a;
+  overflow-wrap: anywhere;
+}
+#error-close {
+  border: none;
+  border-radius: 4px;
+  background-color: transparent;
+  font: inherit;
+  color: #70757a;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+#error-close:hover {
+  background-color: #f1f3f4;
+}
+
 @media screen and (max-height: 200px) {
   #extra {
     display: none;

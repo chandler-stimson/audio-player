@@ -51,6 +51,13 @@ Move to the beginning of the current track (Ctrl/Command + Shift + B or Shift + 
     </div>
   </audio-view>
 
+  <!-- the inline report of a track that cannot be played; the playback
+       stops and the reason stays here until it is dismissed -->
+  <div id="error" hidden>
+    <span id="error-text"></span>
+    <button type="button" id="error-close" title="Dismiss">&#10005;</button>
+  </div>
+
   <!-- the invisible anchor that follows the cursor of a right-click -->
   <span id="menu-anchor"></span>
 
