@@ -40,7 +40,8 @@ chrome.runtime.onMessage.addListener((request, sender) => {
 {
   const once = async () => {
     const prefs = await chrome.storage.local.get({
-      'remember-tracks': 10
+      'remember-tracks': 10,
+      'skip-period': 10
     });
 
     // remove the previous menus so that the radio checkmarks are refreshed
@@ -89,6 +90,36 @@ chrome.runtime.onMessage.addListener((request, sender) => {
         type: 'radio',
         checked: prefs['remember-tracks'] === 0
       }, () => chrome.runtime.lastError);
+
+      // settings for the size of the forward and backward skips of the
+      // player; the separator keeps the two radio groups apart
+      chrome.contextMenus.create({
+        id: 'settings-separator',
+        parentId: 'settings',
+        contexts: ['action'],
+        type: 'separator'
+      }, () => chrome.runtime.lastError);
+      for (const s of [5, 10, 30, 60]) {
+        chrome.contextMenus.create({
+          id: 'skip-' + s,
+          parentId: 'settings',
+          contexts: ['action'],
+          title: 'Skip ' + s + ' Seconds',
+          type: 'radio',
+          checked: prefs['skip-period'] === s
+        }, () => chrome.runtime.lastError);
+      }
+      // a fraction of the length scales the skip with the track itself
+      for (const f of [60, 30, 10]) {
+        chrome.contextMenus.create({
+          id: 'skip-1/' + f,
+          parentId: 'settings',
+          contexts: ['action'],
+          title: 'Skip 1/' + f + ' of Length',
+          type: 'radio',
+          checked: prefs['skip-period'] === '1/' + f
+        }, () => chrome.runtime.lastError);
+      }
     });
   };
   chrome.runtime.onInstalled.addListener(once);
@@ -168,6 +199,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       'remember-tracks': n
     });
     enforce(n);
+  }
+  else if (info.menuItemId.startsWith('skip-')) {
+    const v = info.menuItemId.replace('skip-', '');
+    // a plain number is seconds; a fraction scales with the track length
+    chrome.storage.local.set({
+      'skip-period': v.includes('/') ? v : Number(v)
+    });
   }
 });
 

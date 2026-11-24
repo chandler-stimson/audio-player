@@ -75,7 +75,9 @@ class AudioView extends HTMLElement {
         #parent:not([mode=play]) #play path:nth-child(1) {
           display: none;
         }
-        #parent[mode=nosrc] > svg {
+        #parent[mode=nosrc] > svg,
+        #parent[mode=nosrc] ::slotted([slot=before-progress]),
+        #parent[mode=nosrc] ::slotted([slot=after-progress]) {
           opacity: 0.2;
           pointer-events: none;
         }
@@ -89,8 +91,10 @@ class AudioView extends HTMLElement {
         </svg>
         <slot name="before-stat"></slot>
         <span id="current">0:00</span>
+        <slot name="before-progress"></slot>
         <progress-view id="progress" title="Use Arrow Left/Right to seek 10 seconds backward/forward
 Use Meta + Arrow Left/Right to seek 30 seconds backward/forward"></progress-view>
+        <slot name="after-progress"></slot>
         <span id="duration">0:00</span>
         <slot name="before-sound"></slot>
         <volume-view id="volume" title="Click to toggle mute (M)
@@ -103,6 +107,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       start: 0,
       stop: 0
     };
+    /* the size of a skip; the host reflects the stored user preference into
+       it: a number of seconds or a fraction ("1/60") of the track length */
+    this.skipPeriod = 10;
   }
   connectedCallback() {
     // prevent open dialog to open on dblclick; the volume view retargets
@@ -161,13 +168,13 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         this.toggle();
       }
       else if (e.code === 'ArrowRight') {
-        const shift = (e.metaKey || e.ctrlKey) ? 30 : 10;
+        const shift = this.skipSeconds * ((e.metaKey || e.ctrlKey) ? 3 : 1);
         if (this.currentTime + shift < (this.duration || Infinity)) {
           this.currentTime += shift;
         }
       }
       else if (e.code === 'ArrowLeft') {
-        const shift = (e.metaKey || e.ctrlKey) ? 30 : 10;
+        const shift = this.skipSeconds * ((e.metaKey || e.ctrlKey) ? 3 : 1);
         if (this.currentTime - shift > 0) {
           this.currentTime -= shift;
         }
@@ -215,6 +222,15 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       return this.stream.duration;
     }
     return 0;
+  }
+  /* the resolved seconds of one skip; a fraction scales with the loaded
+     track and an unknown length falls back to the plain default */
+  get skipSeconds() {
+    const p = this.skipPeriod;
+    if (typeof p === 'number') {
+      return p;
+    }
+    return this.duration ? this.duration / Number(p.split('/')[1]) : 10;
   }
   /* true when the element has something loaded that can be resumed */
   get ready() {

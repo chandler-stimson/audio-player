@@ -22,4 +22,10 @@ document.addEventListener('keydown', e => {
   else if (e.code === 'KeyN' && metaKey) {
     click('next');
   }
+  else if (e.code === 'KeyJ') {
+    click('skip-back');
+  }
+  else if (e.code === 'KeyL') {
+    click('skip-forward');
+  }
 });

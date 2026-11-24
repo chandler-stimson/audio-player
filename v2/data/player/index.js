@@ -16,6 +16,38 @@ if (isNaN(localStorage.volume) === false) {
   audio.volume = Number(localStorage.getItem('volume'));
 }
 
+/* the tooltip wording of the skip preference; a number is a plain period of
+   seconds and a fraction scales with the length of the loaded track */
+const skipWord = n => {
+  if (typeof n === 'number') {
+    return [n + ' Seconds', n * 3 + ' Seconds'];
+  }
+  const [a, b] = n.split('/');
+  return [a + '/' + b + ' of the Length', a * 3 + '/' + b + ' of the Length'];
+};
+
+/* reflect the stored skip preference into the player; a change of it applies
+   to an open player right away */
+const applySkip = n => {
+  audio.skipPeriod = n;
+
+  // the tooltips follow the preference
+  const [one, long] = skipWord(n);
+  audio.shadowRoot.getElementById('progress').title =
+    'Use Arrow Left/Right to seek ' + one.toLowerCase() + ' backward/forward' + '\n' +
+    'Use Meta + Arrow Left/Right to seek ' + long.toLowerCase() + ' backward/forward';
+  document.getElementById('skip-back').querySelector('title').textContent = 'Skip ' + one + ' Backward (J)';
+  document.getElementById('skip-forward').querySelector('title').textContent = 'Skip ' + one + ' Forward (L)';
+};
+chrome.storage.local.get({
+  'skip-period': 10
+}).then(prefs => applySkip(prefs['skip-period']));
+chrome.storage.onChanged.addListener((prefs, area) => {
+  if (area === 'local' && prefs['skip-period']) {
+    applySkip(prefs['skip-period'].newValue);
+  }
+});
+
 const title = (msg = '') => {
   if (msg) {
     document.title = msg;
@@ -379,6 +411,25 @@ previous.addEventListener('click', e => {
 });
 next.addEventListener('click', () => navigate('forward', true));
 
+/* a skip moves inside the current track; the bounds match the arrow keys
+   (never past the end, never before the start) */
+document.getElementById('skip-back').addEventListener('click', () => {
+  if (audio.ready) {
+    const shift = audio.skipSeconds;
+    if (audio.currentTime - shift > 0) {
+      audio.currentTime -= shift;
+    }
+  }
+});
+document.getElementById('skip-forward').addEventListener('click', () => {
+  if (audio.ready) {
+    const shift = audio.skipSeconds;
+    if (audio.currentTime + shift < (audio.duration || Infinity)) {
+      audio.currentTime += shift;
+    }
+  }
+});
+
 /* the grant dialog; the Grant button provides the user action that the
    permission prompt of the browser needs */
 {
@@ -496,6 +547,11 @@ audio.addEventListener('empty', () => {
 document.addEventListener('click', () => {
   audio.focus();
 });
+
+// the player keys only reach the audio view while it is focused; a fresh
+// window starts with the focus on the body, so the first Space press would
+// be lost without this
+audio.focus();
 
 {
   let cid;
