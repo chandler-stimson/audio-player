@@ -1,0 +1,57 @@
+name: Build Decoder
+
+# Builds the FFmpeg-based wasm decoder (decoder.js + decoder.wasm) from the
+# vendored source in data/player/decoder/src. The artifacts must be copied
+# over the checked-in binaries in data/player/decoder/ after a review of
+# their size (wasm-unsafe-eval is already allowed by the extension CSP).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'data/player/decoder/src/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: emscripten/emsdk:latest
+    steps:
+      - name: Install build dependencies
+        run: apt-get update && apt-get install -y git make pkg-config
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cd data/player/decoder/src
+          bash build.sh
+
+      - name: Smoke test the built module
+        run: |
+          node -e "
+            const Module = {};
+            Module.onRuntimeInitialized = () => {
+              const exports = ['_decoder', '_decoder_open', '_decoder_pull', '_decoder_seek', '_decoder_close'];
+              const missing = exports.filter(e => typeof Module[e] !== 'function');
+              if (missing.length) {
+                console.error('missing exports:', missing.join(', '));
+                process.exit(1);
+              }
+              console.log('all decoder exports present');
+              process.exit(0);
+            };
+            global.Module = Module;
+            require('./data/player/decoder/src/decoder.js');
+          "
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: decoder
+          path: |
+            data/player/decoder/src/decoder.js
+            data/player/decoder/src/decoder.wasm
+          if-no-files-found: error

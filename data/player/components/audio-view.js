@@ -220,7 +220,7 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     delete this.context;
     delete this.meta;
     this.stat.start = 0;
-    this.stat.end = 0;
+    this.stat.stop = 0;
     this.shadowRoot.getElementById('progress').seek(0);
     this.shadowRoot.getElementById('current').textContent = '0:00';
     this.shadowRoot.getElementById('duration').textContent = '0:00';
@@ -230,39 +230,8 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     if (arrayBuffer) {
       this.reset();
     }
-    const next = () => {
-      if (session !== this.session) {
-        return console.info('skipped');
-      }
-
-      const {context, audioBuffer} = this;
-      const source = this.source = context.createBufferSource();
-
-      source.onended = () => {
-        if (this.currentTime >= audioBuffer.duration) {
-          this.pause();
-          this.dispatchEvent(new Event('ended'));
-        }
-      };
-
-      source.buffer = audioBuffer;
-      this.shadowRoot.getElementById('duration').textContent = htime(audioBuffer.duration);
-
-      const sound = this.sound = context.createGain();
-      sound.gain.value = this.volume;
-
-      sound.connect(context.destination);
-      source.connect(sound);
-
-      const offset = this.currentTime >= audioBuffer.duration ? 0 : this.currentTime;
-      context.resume();
-      source.start(0, offset);
-      this.stat.start = context.currentTime - offset;
-
-      this.dispatchEvent(new Event('play'));
-    };
     if (this.audioBuffer && this.context) {
-      return next();
+      return this.start();
     }
     else {
       const parent = this.shadowRoot.getElementById('parent');
@@ -281,13 +250,22 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
           name: 'input',
           arrayBuffer
         });
+        if (session !== this.session) {
+          return; // another playback session started while decoding
+        }
         Object.assign(this, decoded);
       }
       catch (e) {
+        if (session !== this.session || e.message === 'CANCELED') {
+          return; // superseded or canceled; the new session owns the element
+        }
         console.info('FFmpeg Decoder Failed', e);
         try {
-          const context = new AudioContext();
+          const context = decoder.context();
           const audioBuffer = await context.decodeAudioData(arrayBuffer);
+          if (session !== this.session) {
+            return;
+          }
           Object.assign(this, {
             context,
             audioBuffer,
@@ -304,16 +282,66 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
         }
       }
       this.dispatchEvent(new Event('loadedmetadata'));
-      next();
+      this.start();
     }
+  }
+  // play an already decoded result (produced by the decoder wrapper or cached
+  // by the playlist) without decoding it again
+  async playDecoded(decoded) {
+    if (!decoded || !decoded.audioBuffer) {
+      throw Error('EMPTY_BUFFER');
+    }
+    this.session = Math.random();
+    this.reset();
+    Object.assign(this, decoded);
+    this.dispatchEvent(new Event('loadedmetadata'));
+    this.start();
+  }
+  start() {
+    const {context, audioBuffer} = this;
+    const source = this.source = context.createBufferSource();
+
+    // when the source ends naturally keep the decoded buffer so that the
+    // track can be replayed instantly (repeat-one, seek to zero, ...)
+    source.onended = () => {
+      if (this.source === source) {
+        delete this.source;
+        this.stat.stop = audioBuffer.duration;
+        this.dispatchEvent(new Event('pause'));
+        this.dispatchEvent(new Event('ended'));
+      }
+    };
+
+    source.buffer = audioBuffer;
+    this.shadowRoot.getElementById('duration').textContent = htime(audioBuffer.duration);
+
+    const sound = this.sound = context.createGain();
+    sound.gain.value = this.volume;
+
+    sound.connect(context.destination);
+    source.connect(sound);
+
+    // the resume position; a fully consumed buffer restarts from the beginning.
+    // NOTE: `this.currentTime` cannot be used here; with the shared context
+    // running, its live branch would read a stale `stat.start`
+    const resume = Math.min(this.stat.stop, audioBuffer.duration);
+    const offset = resume >= audioBuffer.duration ? 0 : resume;
+    context.resume();
+    source.start(0, offset);
+    this.stat.start = context.currentTime - offset;
+
+    this.dispatchEvent(new Event('play'));
   }
   pause() {
     const {source, context} = this;
     if (source) {
       delete this.source;
-      context.suspend();
-      source.disconnect();
+      source.onended = null; // ignore the synthetic end event of source.stop
       this.stat.stop = context.currentTime - this.stat.start;
+      if (this.audioBuffer) {
+        this.stat.stop = Math.min(this.stat.stop, this.audioBuffer.duration);
+      }
+      source.disconnect();
       source.stop();
       this.dispatchEvent(new Event('pause'));
     }
@@ -333,8 +361,10 @@ Use Meta + Arrow Up/Down to increase/decrease 30%">
     if (this.source) {
       this.pause();
     }
-    this.stat.stop = Math.max(0, Math.min(this.audioBuffer.duration, v));
-    this.play();
+    if (this.audioBuffer) {
+      this.stat.stop = Math.max(0, Math.min(this.audioBuffer.duration, v));
+      this.play();
+    }
   }
   get volume() {
     return this.shadowRoot.getElementById('sound').percent / 50;

@@ -1,4 +1,4 @@
-/* global drag, launchQueue */
+/* global drag, launchQueue, decoder */
 'use strict';
 
 const args = new URLSearchParams(location.search);
@@ -37,7 +37,7 @@ const title = (msg = '') => {
   }
 };
 
-const get = (href, progress) => {
+const get = (href, progress, limit) => {
   if (href.startsWith('filesystem:')) { // fetch does not work with this scheme
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -45,8 +45,12 @@ const get = (href, progress) => {
       xhr.responseType = 'arraybuffer';
 
       xhr.onprogress = e => {
-        if (e.lengthComputable) {
+        if (progress && e.lengthComputable) {
           progress(e.loaded, e.total);
+        }
+        if (limit && e.lengthComputable && e.total > limit) {
+          xhr.abort();
+          reject(Error('TOO_LARGE'));
         }
       };
 
@@ -76,12 +80,20 @@ const get = (href, progress) => {
         function read() {
           reader.read().then(({done, value}) => {
             if (done) {
-              new Blob(segments.map(s => s.buffer)).arrayBuffer().then(resolve);
+              // pass the typed-array views to the Blob; a chunk buffer can be
+              // larger than the portion that was actually read
+              new Blob(segments).arrayBuffer().then(resolve);
               return;
             }
 
             loaded += value.length;
-            progress(loaded, total);
+            if (progress) {
+              progress(loaded, total);
+            }
+            if (limit && loaded > limit) {
+              reader.cancel().catch(() => {}).then(() => reject(Error('TOO_LARGE')));
+              return;
+            }
             segments.push(value);
 
             read();
@@ -104,6 +116,98 @@ const format = (bytes, decimals) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
+/* decoded-result cache; enables instant track transitions */
+const cache = new Map();
+const CACHE_LIMIT = 256 * 1024 * 1024;   // max bytes of decoded PCM to keep
+const PREFETCH_LIMIT = 16 * 1024 * 1024; // do not prefetch inputs bigger than this
+
+const decodedBytes = decoded => {
+  const b = decoded.audioBuffer;
+  return b.length * b.numberOfChannels * 4;
+};
+
+const cacheSet = (file, decoded) => {
+  if (decodedBytes(decoded) > CACHE_LIMIT) {
+    return; // a single entry that does not fit; never evict others for it
+  }
+  cache.delete(file);
+  cache.set(file, decoded); // the most recent entry is always last
+
+  let bytes = 0;
+  for (const d of cache.values()) {
+    bytes += decodedBytes(d);
+  }
+  // evict the least recently used entries
+  for (const f of cache.keys()) {
+    if (bytes <= CACHE_LIMIT || f === file) {
+      break;
+    }
+    bytes -= decodedBytes(cache.get(f));
+    cache.delete(f);
+  }
+};
+
+/* the track that follows the current one in linear mode */
+const nextFile = () => {
+  const files = audio.files || [];
+  const n = (audio.i || 0) + 1;
+  if (n < files.length) {
+    return files[n];
+  }
+  const repeat = document.getElementById('repeat').getAttribute('mode');
+  return (repeat === 'repeat' && files.length) ? files[0] : null;
+};
+
+/* decode the next track in the background while the current one is playing */
+let prefetching = null;
+const prefetch = () => {
+  const shuffle = document.getElementById('shuffle').getAttribute('active') === 'true';
+  const file = shuffle ? null : nextFile();
+
+  if (!file || file === audio.file || cache.has(file)) {
+    return;
+  }
+  // decoding a very large input in the background costs more (CPU and memory)
+  // than the transition it would save
+  if (file.size && file.size > PREFETCH_LIMIT) {
+    return;
+  }
+
+  prefetching = file;
+
+  // the size limit keeps a background prefetch from downloading inputs that
+  // would cost more to decode than the transition it would save
+  const input = file.href ? get(file.href, undefined, PREFETCH_LIMIT) : new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+
+  input.then(arrayBuffer => decoder.decode({
+    name: 'input',
+    arrayBuffer,
+    owner: 'prefetch'
+  })).then(decoded => {
+    if (prefetching === file) {
+      cacheSet(file, decoded);
+    }
+  }).catch(() => {}).finally(() => {
+    if (prefetching === file) {
+      prefetching = null;
+    }
+  });
+};
+
+const done = (file, action) => {
+  file.count = (file.count || 0) + 1;
+  action().catch(e => {
+    document.title = (e.message || e);
+    console.error(e);
+  });
+  title();
+};
+
 const play = () => {
   const i = audio.i || 0;
 
@@ -112,36 +216,50 @@ const play = () => {
   previous.setAttribute('disabled', i === 0);
   next.setAttribute('disabled', i >= audio.files.length - 1);
 
-  const done = buffer => {
-    audio.file.count = (audio.file.count || 0) + 1;
-    audio.play(buffer).catch(e => {
-      document.title = (e.message || e);
-      console.error(e);
-    });
-    title();
-  };
+  const file = audio.file;
+  if (!file) {
+    return;
+  }
 
-  if (audio.file) {
-    if (audio.file.href) {
-      get(audio.file.href, (s, m) => {
-        let msg = 'Buffering ';
+  // stop background decodes for tracks that are no longer next
+  if (prefetching && prefetching !== file) {
+    prefetching = null;
+    decoder.cancel('prefetch');
+  }
 
-        msg += format(s, 1);
+  const cached = cache.get(file);
+  if (cached) {
+    // any decode that is still running belongs to a previous track
+    decoder.cancel('user');
+    return done(file, () => audio.playDecoded(cached));
+  }
 
-        if (m) {
-          msg += ' / ' + format(m, 1);
-          msg += ' [' + (s / m * 100).toFixed(1) + '%]';
-        }
-        document.title = msg + '...';
-      }).then(done).catch(e => alert(e.message));
-    }
-    else {
-      const reader = new FileReader();
-      reader.onload = () => {
-        done(reader.result);
-      };
-      reader.readAsArrayBuffer(audio.file);
-    }
+  if (file.href) {
+    get(file.href, (s, m) => {
+      let msg = 'Buffering ';
+
+      msg += format(s, 1);
+
+      if (m) {
+        msg += ' / ' + format(m, 1);
+        msg += ' [' + (s / m * 100).toFixed(1) + '%]';
+      }
+      document.title = msg + '...';
+    }).then(buffer => {
+      // the track was switched while the input was downloading
+      if (audio.file === file) {
+        done(file, () => audio.play(buffer));
+      }
+    }).catch(e => alert(e.message));
+  }
+  else {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (audio.file === file) {
+        done(file, () => audio.play(reader.result));
+      }
+    };
+    reader.readAsArrayBuffer(file);
   }
 };
 
@@ -203,12 +321,34 @@ next.addEventListener('click', () => navigate('forward', true));
   let id;
   audio.addEventListener('play', () => {
     clearTimeout(id);
+    // decode the next track in the background while this one is playing
+    prefetch();
   });
   const m = () => {
     meta();
+
+    const single = audio.files && audio.files.length === 1;
+    const repeat = document.getElementById('repeat').getAttribute('mode');
+
+    // instant replay: the decoded buffer of the current track is still in memory
+    if ((repeat === 'repeat-one' || (repeat === 'repeat' && single)) && audio.audioBuffer) {
+      audio.file.count = (audio.file.count || 0) + 1;
+      title();
+      audio.play();
+      return;
+    }
+
+    const cached = (() => {
+      if (document.getElementById('shuffle').getAttribute('active') === 'true') {
+        return false; // the next track is picked randomly on demand
+      }
+      const file = nextFile();
+      return Boolean(file && cache.has(file));
+    })();
+
     id = setTimeout(() => {
-      const repeat = document.getElementById('repeat').getAttribute('mode');
-      if (repeat === 'repeat-one') {
+      const r = document.getElementById('repeat').getAttribute('mode');
+      if (r === 'repeat-one') {
         play();
       }
       else {
@@ -217,19 +357,19 @@ next.addEventListener('click', () => navigate('forward', true));
           navigate('forward');
         }
         else {
-          if (repeat === 'no-repeat' && next.getAttribute('disabled') === 'false') {
+          if (r === 'no-repeat' && next.getAttribute('disabled') === 'false') {
             navigate('forward');
           }
-          else if (repeat === 'repeat' && audio.i === audio.files.length - 1) {
+          else if (r === 'repeat' && audio.i === audio.files.length - 1) {
             audio.i = 0;
             play();
           }
-          else if (repeat === 'repeat') {
+          else if (r === 'repeat') {
             navigate('forward');
           }
         }
       }
-    }, 500);
+    }, cached ? 50 : 500);
   };
   audio.addEventListener('error', e => {
     console.error(e);
