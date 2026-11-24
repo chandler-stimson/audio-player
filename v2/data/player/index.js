@@ -270,6 +270,9 @@ const play = () => {
     return;
   }
 
+  // the track that is playing now is the one that the next launch selects
+  remember.current(file);
+
   // a remembered local track needs its read permission before it can be
   // decoded; selecting the track provides the gesture for the prompt
   if (file.locked) {
@@ -1084,7 +1087,6 @@ const add = async files => {
 
   // the old entries of the incoming tracks are removed from the highest
   // index down so that the indices of the removals stay valid
-  let replaced = false;
   for (let k = audio.files.length - 1; k >= 0; k -= 1) {
     let dupe = false;
     for (const file of incoming) {
@@ -1094,16 +1096,14 @@ const add = async files => {
       }
     }
     if (dupe) {
-      // the current track can be one of the replaced entries
-      replaced = replaced || k === (audio.i || 0);
       removeAt(k, true);
     }
   }
 
-  /* the first new track becomes the current one; when its old copy was
-     playing, the cursor moves to the position of the replacement */
+  /* the first new track becomes the current one; the incoming tracks are
+     appended at the end and the first of them plays right afterwards */
   if (audio.files.length && incoming.length) {
-    audio.i = replaced ? audio.files.length : (audio.i + 1);
+    audio.i = audio.files.length;
   }
 
   const view = document.getElementById('view');
@@ -1141,10 +1141,11 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
     });
   }
 });
-/* restore the remembered tracks into the playlist without playing them; a
+/* restore the remembered tracks into the playlist without playing them; the
+   track that was playing when the last session ended is the selected one; a
    track that is passed to this window afterwards plays as the newly added
    one */
-const restored = remember.restore().then(files => {
+const restored = remember.restore().then(({files, index}) => {
   if (files.length === 0) {
     return;
   }
@@ -1186,8 +1187,9 @@ const restored = remember.restore().then(files => {
     }
   }
 
-  // the last restored track is the current one
-  audio.i = audio.files.length - 1;
+  // the remembered playing track is the current one; the last restored
+  // track is the fallback when it is not restorable anymore
+  audio.i = index === -1 ? audio.files.length - 1 : index;
   view.selectedIndex = audio.i + 1;
   title();
 

@@ -4,7 +4,9 @@
 /* Track remembering; the last added tracks are stored in IndexedDB so that
    the playlist can be restored. Link tracks are stored as plain records and
    local tracks are stored as FileSystemFileHandle-s; a stored handle is read
-   back only after the user grants the read permission for it. */
+   back only after the user grants the read permission for it. The track that
+   is playing when a track switch happens is stored as well so that the next
+   launch can select it again. */
 const remember = {};
 window.remember = remember;
 
@@ -34,7 +36,12 @@ const db = {
   })),
   read: () => db.tx('readonly', os => os.get('list')).then(r => (r && r.list) || []),
   write: list => db.tx('readwrite', os => os.put({list}, 'list')),
-  clear: () => db.tx('readwrite', os => os.clear())
+  clear: () => db.tx('readwrite', os => os.clear()),
+  /* the record of the track that is playing now; it is a separate key so
+     that the trimming of the stored list leaves it alone */
+  readCurrent: () => db.tx('readonly', os => os.get('current')).then(r => r || null),
+  writeCurrent: record => db.tx('readwrite', os => os.put(record, 'current')),
+  dropCurrent: () => db.tx('readwrite', os => os.delete('current'))
 };
 
 /* convert an added track into a storable record; a File without a handle
@@ -122,9 +129,32 @@ remember.persist = async files => {
   }
 };
 
+/* remember the track that is playing now; a track that cannot be stored (a
+   dropped File without a handle) clears the remembered one so that the next
+   launch falls back to the last restored track; the promise never rejects */
+remember.current = file => {
+  const record = file ? remember.toRecord(file) : null;
+  queue = queue.then(async () => {
+    try {
+      if (record) {
+        await db.writeCurrent(record);
+      }
+      else {
+        await db.dropCurrent();
+      }
+    }
+    catch (e) {
+      console.warn('CANNOT_REMEMBER_CURRENT', e);
+    }
+  });
+  return queue;
+};
+
 /* playlist entries for the remembered tracks; a local file without the read
    permission returns a locked entry that asks for the permission on the
-   first attempt to play it; the promise never rejects */
+   first attempt to play it; `index` is the position of the remembered playing
+   track among the entries and -1 when it is not restorable anymore; the
+   promise never rejects */
 remember.restore = async () => {
   try {
     const prefs = await chrome.storage.local.get({
@@ -132,7 +162,7 @@ remember.restore = async () => {
     });
     if (prefs['remember-tracks'] === 0) {
       await db.clear();
-      return [];
+      return {files: [], index: -1};
     }
 
     let list = await db.read();
@@ -142,14 +172,22 @@ remember.restore = async () => {
       db.write(list).catch(e => console.warn('CANNOT_TRIM_TRACKS', e));
     }
 
+    // the track that was playing when the last session ended; an unreadable
+    // record leaves the selection to the caller
+    const current = await db.readCurrent().catch(() => null);
+
     const files = [];
+    let index = -1;
     for (const record of list) {
       try {
+        // `pushed` is false when the record produces no playlist entry
+        let pushed = false;
         if (record.kind === 'link') {
           files.push({
             name: record.name,
             href: record.href
           });
+          pushed = true;
         }
         else if (record.handle.queryPermission) {
           const state = await record.handle.queryPermission({mode: 'read'});
@@ -165,6 +203,11 @@ remember.restore = async () => {
               locked: true
             });
           }
+          pushed = true;
+        }
+        // the entry of the remembered playing track is the selected one
+        if (pushed && current && index === -1 && await remember.same(current, record)) {
+          index = files.length - 1;
         }
       }
       catch (e) {
@@ -172,11 +215,11 @@ remember.restore = async () => {
         console.warn('CANNOT_RESTORE_TRACK', e);
       }
     }
-    return files;
+    return {files, index};
   }
   catch (e) {
     console.warn('CANNOT_RESTORE_TRACKS', e);
-    return [];
+    return {files: [], index: -1};
   }
 };
 
