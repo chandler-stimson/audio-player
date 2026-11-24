@@ -1,15 +1,15 @@
 name: Build Decoder
 
 # Builds the FFmpeg-based wasm decoder (decoder.js + decoder.wasm) from the
-# vendored source in data/player/decoder/src. The artifacts must be copied
-# over the checked-in binaries in data/player/decoder/ after a review of
-# their size (wasm-unsafe-eval is already allowed by the extension CSP).
+# vendored source in dev/decoder. The artifacts must be copied over the
+# checked-in binaries in v2/data/player/decoder/ after a review of their
+# size (wasm-unsafe-eval is already allowed by the extension CSP).
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'data/player/decoder/src/**'
+      - 'dev/decoder/**'
 
 jobs:
   build:
@@ -26,7 +26,7 @@ jobs:
 
       - name: Build
         run: |
-          cd data/player/decoder/src
+          cd dev/decoder
           bash build.sh
 
       - name: Smoke test the built module
@@ -44,7 +44,7 @@ jobs:
               process.exit(0);
             };
             global.Module = Module;
-            require('./data/player/decoder/src/decoder.js');
+            require('./dev/decoder/decoder.js');
           "
 
       - name: Upload artifacts
@@ -52,6 +52,6 @@ jobs:
         with:
           name: decoder
           path: |
-            data/player/decoder/src/decoder.js
-            data/player/decoder/src/decoder.wasm
+            dev/decoder/decoder.js
+            dev/decoder/decoder.wasm
           if-no-files-found: error

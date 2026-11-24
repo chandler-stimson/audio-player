@@ -173,7 +173,10 @@ class SimpleListView extends HTMLElement {
     this.#parent.style.setProperty('--structure', c);
   }
   #adjust() {
-    this.#select.size = this.#select.options.length + (this.getAttribute('headers') === 'false' ? -1 : 0);
+    const n = this.#select.options.length + (this.getAttribute('headers') === 'false' ? -1 : 0);
+    // a native select renders as a drop-down box when `size` is 1 even with
+    // `multiple` set; a list box needs at least two rows to stay interactive
+    this.#select.size = (n === 1) ? 2 : n;
     this.setAttribute('size', this.#select.size);
   }
   option(parts, name, value, selected = false) {

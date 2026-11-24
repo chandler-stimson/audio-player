@@ -1,0 +1,6 @@
+decoder.js and decoder.wasm are prebuilt releases of the FFmpeg-based decoder
+
+  https://github.com/chandler-stimson/decoder.js/releases/tag/0.1.2
+
+The buildable source (with a buffered batch mode and an incremental streaming
+API) is maintained outside the extension directory: dev/decoder/

@@ -60,7 +60,11 @@ const drop = async es => {
   }
 };
 
-document.addEventListener('dblclick', () => {
+document.addEventListener('dblclick', e => {
+  // double-clicking a playlist row selects a track; do not open the file browser
+  if (e.target.closest('#playlist')) {
+    return;
+  }
   document.getElementById('browse').click();
 });
 document.getElementById('browse').addEventListener('click', () => {

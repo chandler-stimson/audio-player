@@ -8,7 +8,7 @@ const click = (extra = '') => {
       chrome.windows.getCurrent(win => {
         chrome.storage.local.get({
           width: 500,
-          height: 80,
+          height: 120,
           left: win.left + Math.round((win.width - 500) / 2),
           top: win.top + Math.round((win.height - 80) / 2)
         }, prefs => {
