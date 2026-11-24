@@ -1295,19 +1295,40 @@ const addTracks = async files => {
 const add = files => restored.then(() => serialize(() => addTracks(files)));
 
 drag.onDrag(add);
+
+/* the broadcasts of the worker reach every open copy of the player; a Web
+   Lock elects exactly one copy so that the others neither start the
+   incoming jobs nor fight for the focus; a copy that loses the election
+   must stay silent because its answer would race the answer of the
+   elected copy and could make the worker open yet another window */
+const elect = job => navigator.locks.request('player', {
+  ifAvailable: true
+}, async lock => {
+  if (lock) {
+    job();
+  }
+});
+
 chrome.runtime.onMessage.addListener((request, sender, response) => {
   if (request.method === 'jobs') {
-    add(request.jobs);
-    response(true);
-    chrome.runtime.sendMessage({
-      method: 'bring-to-front'
+    elect(() => {
+      add(request.jobs);
+      response(true);
+      chrome.runtime.sendMessage({
+        method: 'bring-to-front'
+      });
     });
+    // the elected copy answers asynchronously
+    return true;
   }
   else if (request.method === 'ping') {
-    response('pong');
-    chrome.runtime.sendMessage({
-      method: 'bring-to-front'
+    elect(() => {
+      response('pong');
+      chrome.runtime.sendMessage({
+        method: 'bring-to-front'
+      });
     });
+    return true;
   }
 });
 /* restore the remembered tracks into the playlist without playing them; the
