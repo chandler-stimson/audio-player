@@ -162,22 +162,56 @@ const makeBufferInput = arrayBuffer => {
   };
 };
 
+/* A network input downloads sequentially when the server cannot re-serve a
+   byte range; readAt then answers only at the frontier of the download and
+   everything it delivers has to be retained. A server that advertises
+   Accept-Ranges re-serves any position on demand, so readAt becomes random
+   access and nothing has to be kept. An unknown size leaves no end byte
+   that a range request could name, so such a server stays sequential. */
 const makeHrefInput = async href => {
   const response = await fetch(href);
   if (!response.ok) {
     throw Error('HTTP_' + response.status);
   }
   const total = parseInt(response.headers.get('Content-Length'), 10) || -1;
-  const reader = response.body.getReader();
+  const ranges = response.headers.get('Accept-Ranges') === 'bytes' && total >= 0;
+  const reader = ranges ? null : response.body.getReader();
+  if (ranges && response.body) {
+    // the initial response was only probed for its headers
+    response.body.cancel().catch(() => {});
+  }
 
   const input = {
     kind: 'href',
+    ranges,
     size: total,
     streamEnded: false,
     frontier: 0,
-    // the download is strictly sequential; readAt serves the next received
-    // chunk and only at the frontier position
-    async readAt(pos) {
+    async readAt(pos, length) {
+      if (ranges) {
+        if (pos >= input.size) {
+          return null;
+        }
+        length = Math.min(length, input.size - pos);
+        const r = await fetch(href, {
+          headers: {Range: 'bytes=' + pos + '-' + (pos + length - 1)}
+        });
+        // anything but a 206 (a 200 answers with the whole input) must not
+        // silently become the region
+        if (r.status !== 206) {
+          throw Error('HTTP_RANGE_' + r.status);
+        }
+        // the answer must name the requested range; misaligned bytes would
+        // corrupt the decode without ever failing loudly
+        const m = /^bytes (\d+)-/.exec(r.headers.get('Content-Range') || '');
+        if (!m || Number(m[1]) !== pos) {
+          throw Error('HTTP_RANGE_MISMATCH');
+        }
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        return bytes.length ? {pos, bytes} : null;
+      }
+      // the download is strictly sequential; readAt serves the next received
+      // chunk and only at the frontier position
       if (pos !== input.frontier || input.streamEnded) {
         return null;
       }
@@ -192,7 +226,9 @@ const makeHrefInput = async href => {
     },
     cancel() {
       input.streamEnded = true;
-      reader.cancel().catch(() => {});
+      if (reader) {
+        reader.cancel().catch(() => {});
+      }
     }
   };
   return input;
@@ -210,8 +246,10 @@ const makeFeed = input => ({
   input,
   regions: [],
   cursor: 0,
-  // a downloaded stream is retained so that the demuxer can seek back
-  retain: input.kind === 'href',
+  // a sequential download cannot re-read a byte: everything it delivered is
+  // retained so that the demuxer can seek back. A range-capable download
+  // re-fetches on demand, so its regions are spent like those of a file
+  retain: input.kind === 'href' && !input.ranges,
 
   reset() {
     this.regions = [];
@@ -246,7 +284,8 @@ const makeFeed = input => ({
     return null;
   },
   eofAt(pos) {
-    if (this.input.kind === 'href') {
+    // a range-capable download knows its end like a local file does
+    if (this.input.kind === 'href' && !this.input.ranges) {
       return this.input.streamEnded && pos >= this.input.frontier;
     }
     return pos >= this.input.size;
@@ -286,8 +325,8 @@ const makeFeed = input => ({
     if (target < 0 || (input.size >= 0 && target > input.size)) {
       return -1;
     }
-    if (input.kind === 'href' && target > input.frontier) {
-      return -1; // beyond what the download has reached so far
+    if (input.kind === 'href' && !input.ranges && target > input.frontier) {
+      return -1; // beyond what the sequential download has reached so far
     }
     this.cursor = target;
     return target;
@@ -458,7 +497,8 @@ const preRead = async (session, head, tail) => {
     feed.add(await input.readAt(0, input.size));
     return;
   }
-  if (input.kind === 'href') {
+  if (input.kind === 'href' && !input.ranges) {
+    // a sequential download cannot jump: its head grows byte by byte
     while (input.frontier < head && !input.streamEnded) {
       const region = await input.readAt(input.frontier, head - input.frontier);
       if (!region) {
@@ -468,6 +508,9 @@ const preRead = async (session, head, tail) => {
     }
     return;
   }
+  // a local file and a range-capable download are read at both ends: a
+  // demuxer needs the head atoms and (for the formats that keep their index
+  // at the end) the tail
   feed.add(await input.readAt(0, head));
   if (tail < input.size) {
     feed.add(await input.readAt(input.size - tail, tail));
@@ -628,7 +671,8 @@ const cmdSeek = async msg => {
   const to = Math.max(0, msg.to);
   const target = to + session.seekBase();
 
-  if (session.input.kind === 'file') {
+  if (session.input.kind === 'file' ||
+      (session.input.kind === 'href' && session.input.ranges)) {
     // pre-read around the byte position that the target lands on so that
     // the probing reads of the demuxer are served synchronously
     const bytesPerSecond = session.duration && session.input.size > 0 ?
@@ -637,7 +681,10 @@ const cmdSeek = async msg => {
       Math.min(Math.max(0, Math.round(target * bytesPerSecond)), session.input.size) : 0;
     if (estimate) {
       const from = Math.max(0, estimate - SEEK_BACK);
-      const region = await session.input.readAt(from, Math.min(SEEK_BACK + READAHEAD.file, session.input.size - from));
+      // a network pre-read stays small: the range request is a download,
+      // a local slice is not
+      const ahead = session.input.kind === 'file' ? READAHEAD.file : READAHEAD.href;
+      const region = await session.input.readAt(from, Math.min(SEEK_BACK + ahead, session.input.size - from));
       if (region) {
         session.feed.add(region);
       }

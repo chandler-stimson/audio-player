@@ -28,6 +28,9 @@ const WINDOW_BEHIND = 10;
 /* the safety gap between the scheduling time and now; a source that starts
    exactly at the current context time can click */
 const SCHEDULE_EPSILON = 0.05;
+/* how far past its end a finished source stays in the run before it is
+   dropped; the margin keeps the drop safely behind the audio clock */
+const SOURCE_PRUNE_MARGIN = 1;
 
 class AudioView extends HTMLElement {
   constructor() {
@@ -531,8 +534,13 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     if (run.sources.length === 0) {
       this.source = source;
     }
+    // the scheduled end of this source; #maintain drops a finished source
+    // from the head of the run once the audio clock is safely past it, so
+    // that neither the node nor its AudioBuffer is pinned for the whole
+    // track while the playback continues
+    source.endAt = when + chunk.seconds - offset;
     run.sources.push(source);
-    run.endTime = when + chunk.seconds - offset;
+    run.endTime = source.endAt;
     run.nextPos = chunk.pos + chunk.seconds;
   }
 
@@ -610,6 +618,23 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     if (s.run && s.run.endTime < context.currentTime - 0.25) {
       this.stat.stop = s.run.nextPos;
       this.#stopRun();
+    }
+
+    // drop the sources that finished playing from the head of the run: they
+    // are already silent, but as long as the run references them they keep
+    // their AudioBuffer alive, which would grow the memory with the whole
+    // played track instead of the decoded window. The last source is never
+    // dropped (only it carries the ended signal of a finished stream) and
+    // `this.source` stays truthful for the pause/toggle branches
+    const run = s.run;
+    while (run && run.sources.length > 1 &&
+           run.sources[0].endAt < context.currentTime - SOURCE_PRUNE_MARGIN) {
+      const done = run.sources.shift();
+      done.onended = null;
+      done.disconnect();
+      if (this.source === done) {
+        this.source = run.sources[0];
+      }
     }
 
     // resume a waiting run when its window is decoded
