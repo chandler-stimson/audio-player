@@ -211,9 +211,9 @@ const unlock = async (file, index) => {
     state = await file.handle.requestPermission({mode: 'read'});
   }
   catch (e) {
-    // the permission prompt requires a user gesture; keyboard jumps and the
-    // automatic advancement do not provide one
-    throw Error('Cannot read "' + file.name + '". Click the track once to grant the read access.');
+    // the permission prompt requires a user action; the automatic
+    // advancement and the synthetic key events cannot provide one
+    throw Error('Cannot ask for the read permission of "' + file.name + '" without a user action.');
   }
   if (state !== 'granted') {
     throw Error('The read permission for "' + file.name + '" was denied.');
@@ -224,6 +224,33 @@ const unlock = async (file, index) => {
   audio.files[index] = real;
 
   return real;
+};
+
+/* the read permission of a locked track cannot be asked for without a user
+   action; the automatic advancement pauses on the grant dialog and its
+   Grant button provides the action that the prompt of the browser needs */
+const grantJob = {
+  file: null,
+  index: -1
+};
+
+const askAccess = (file, index, e) => {
+  grantJob.file = file;
+  grantJob.index = index;
+
+  const grant = document.getElementById('grant');
+  document.getElementById('grant-body').textContent =
+    'The local track "' + file.name + '" needs its read access back. The browser clears the ' +
+    'remembered permission of a local file after each restart.';
+  const status = document.getElementById('grant-status');
+  status.textContent = e.message || e;
+  status.hidden = false;
+
+  // the dialog already pauses the player for another locked track
+  if (grant.open === false) {
+    grant.showModal();
+  }
+  title('Read access needed: ' + file.name);
 };
 
 const play = () => {
@@ -251,10 +278,7 @@ const play = () => {
       if ((audio.i || 0) === i) {
         play();
       }
-    }).catch(e => {
-      document.title = (e.message || e);
-      alert(e.message || e);
-    });
+    }).catch(e => askAccess(file, i, e));
     return;
   }
 
@@ -353,6 +377,53 @@ previous.addEventListener('click', e => {
   }
 });
 next.addEventListener('click', () => navigate('forward', true));
+
+/* the grant dialog; the Grant button provides the user action that the
+   permission prompt of the browser needs */
+{
+  const grant = document.getElementById('grant');
+  const status = document.getElementById('grant-status');
+
+  document.getElementById('grant-ok').addEventListener('click', () => {
+    const {file, index} = grantJob;
+    // this click is the user action that the prompt needs
+    unlock(file, index).then(() => {
+      // the row is readable now; revert it to a normal row
+      if (file.cleanup) {
+        file.cleanup();
+      }
+      grant.close();
+      // the track was not switched while the permission was being asked for
+      if ((audio.i || 0) === index) {
+        play();
+      }
+    }).catch(e => {
+      // the permission was denied; the reason stays in the open dialog
+      status.textContent = e.message || e;
+      status.hidden = false;
+    });
+  });
+
+  // the Esc key restores the idle title of the paused player
+  grant.addEventListener('cancel', () => title());
+
+  grant.addEventListener('close', () => {
+    if (grant.returnValue === 'skip') {
+      // the locked track must still be the current one and have a follower
+      if ((audio.files || [])[audio.i || 0] === grantJob.file &&
+          (audio.i || 0) < audio.files.length - 1) {
+        navigate('forward', true);
+      }
+    }
+    else if (grant.returnValue === 'cancel') {
+      title();
+    }
+    // a stale return value must not leak into the next grant request
+    grant.returnValue = '';
+    grantJob.file = null;
+    grantJob.index = -1;
+  });
+}
 
 {
   let id;
@@ -465,14 +536,6 @@ document.addEventListener('click', () => {
 
   // the row that the menu was opened for; -1 when it is the empty area
   let menuIndex = -1;
-
-  // the track that the open metadata dialog describes and the on-demand
-  // decode that belongs to it
-  const metaJob = {
-    file: null,
-    token: 0,
-    decoding: false
-  };
 
   /* the hidden select of the list view mirrors the geometry of the rows; the
      row under a coordinate is the option that contains it */
@@ -638,12 +701,6 @@ document.addEventListener('click', () => {
     metaJob.token += 1; // a late result can no longer update anything
   });
 
-  const closeMetadata = () => {
-    if (metadata.open) {
-      metadata.close();
-    }
-  };
-
   // `closedby="any"` is not supported everywhere; dismiss manually there
   if ('closedBy' in HTMLDialogElement.prototype === false) {
     let outside = false;
@@ -766,75 +823,6 @@ document.addEventListener('click', () => {
     }
   };
 
-  /* nothing is playing anymore; the player is reset to its idle state while
-     the playlist stays in place */
-  const stopped = () => {
-    // the decode that might still be running belongs to a removed track
-    decoder.cancel('user');
-    audio.reset();
-    audio.session = Math.random();
-    // the play button must stay usable for the tracks that are left
-    const parent = audio.shadowRoot.getElementById('parent');
-    parent.setAttribute('mode', (audio.files && audio.files.length) ? 'play' : 'nosrc');
-    previous.setAttribute('disabled', (audio.i || 0) === 0);
-    next.setAttribute('disabled', 'true');
-    title();
-  };
-
-  /* remove the track at `index` from the playlist and forget it */
-  const removeAt = index => {
-    const file = audio.files && audio.files[index];
-    if (!file) {
-      return;
-    }
-
-    // the metadata dialog that describes this track is closed with its decode
-    if (metaJob.file === file) {
-      closeMetadata();
-    }
-
-    // the background prefetch of the removed track is not needed anymore
-    if (prefetching === file) {
-      prefetching = null;
-      decoder.cancel('prefetch');
-    }
-    cache.delete(file);
-
-    view.removeIndex(index + 1); // the view counts the hidden header row
-    audio.files.splice(index, 1);
-
-    // the track must not come back on the next launch
-    remember.remove(file);
-
-    if (index === (audio.i || 0)) {
-      // the current track was removed; the next one becomes the current one
-      if (audio.i < audio.files.length) {
-        play();
-      }
-      else if (audio.files.length) {
-        // the last track was removed while playing; nothing advances anymore
-        audio.i = audio.files.length - 1;
-        view.selectedIndex = audio.i + 1;
-        stopped();
-      }
-      else {
-        // the playlist is empty now; an empty list breaks `title()`
-        audio.files = null;
-        audio.i = 0;
-        stopped();
-      }
-    }
-    else {
-      if (index < (audio.i || 0)) {
-        audio.i -= 1;
-      }
-      // the navigation buttons and the title follow the shorter playlist
-      previous.setAttribute('disabled', (audio.i || 0) === 0);
-      next.setAttribute('disabled', (audio.i || 0) >= audio.files.length - 1);
-      title();
-    }
-  };
-
   /* remove every track from the playlist and forget all of them */
   const removeAll = () => {
     closeMetadata(); // stops the metadata decode that belongs to the dialog
@@ -903,16 +891,174 @@ document.addEventListener('click', () => {
   }
 }
 
-const add = files => {
-  audio.i = audio.i || 0;
-  audio.files = audio.files || [];
+/* the track that the open metadata dialog describes and the on-demand
+   decode that belongs to it */
+const metaJob = {
+  file: null,
+  token: 0,
+  decoding: false
+};
 
-  if (audio.files.length && files.length) {
-    audio.i += 1;
+/* the metadata dialog of a removed track is closed with its on-demand decode */
+const closeMetadata = () => {
+  const metadata = document.getElementById('metadata');
+  if (metadata.open) {
+    metadata.close();
+  }
+};
+
+/* nothing is playing anymore; the player is reset to its idle state while
+   the playlist stays in place */
+const stopped = () => {
+  // the decode that might still be running belongs to a removed track
+  decoder.cancel('user');
+  audio.reset();
+  audio.session = Math.random();
+  // the play button must stay usable for the tracks that are left
+  const parent = audio.shadowRoot.getElementById('parent');
+  parent.setAttribute('mode', (audio.files && audio.files.length) ? 'play' : 'nosrc');
+  previous.setAttribute('disabled', (audio.i || 0) === 0);
+  next.setAttribute('disabled', 'true');
+  title();
+};
+
+/* remove the track at `index` from the playlist and forget it; `silent`
+   leaves the playback alone when the current track is removed because the
+   replacing copy of a duplicate plays right afterwards */
+const removeAt = (index, silent = false) => {
+  const file = audio.files && audio.files[index];
+  if (!file) {
+    return;
+  }
+
+  // the metadata dialog that describes this track is closed with its decode
+  if (metaJob.file === file) {
+    closeMetadata();
+  }
+
+  // the background prefetch of the removed track is not needed anymore
+  if (prefetching === file) {
+    prefetching = null;
+    decoder.cancel('prefetch');
+  }
+  cache.delete(file);
+
+  // a locked row must not keep the click handler of its removed row
+  if (file.cleanup) {
+    file.cleanup();
   }
 
   const view = document.getElementById('view');
+  view.removeIndex(index + 1); // the view counts the hidden header row
+  audio.files.splice(index, 1);
+
+  // the track must not come back on the next launch
+  remember.remove(file);
+
+  if (index === (audio.i || 0)) {
+    // the current track was removed
+    if (silent) {
+      // the replacing copy follows right after; the caller fixes the index
+      return;
+    }
+    // the next one becomes the current one
+    if (audio.i < audio.files.length) {
+      play();
+    }
+    else if (audio.files.length) {
+      // the last track was removed while playing; nothing advances anymore
+      audio.i = audio.files.length - 1;
+      view.selectedIndex = audio.i + 1;
+      stopped();
+    }
+    else {
+      // the playlist is empty now; an empty list breaks `title()`
+      audio.files = null;
+      audio.i = 0;
+      stopped();
+    }
+  }
+  else {
+    if (index < (audio.i || 0)) {
+      audio.i -= 1;
+    }
+    // the additions refresh the navigation buttons and the title afterwards
+    if (silent) {
+      return;
+    }
+    // the navigation buttons and the title follow the shorter playlist
+    previous.setAttribute('disabled', (audio.i || 0) === 0);
+    next.setAttribute('disabled', (audio.i || 0) >= audio.files.length - 1);
+    title();
+  }
+};
+
+/* two entries describe the same track when they point to the same link or
+   the same local file; a plain File without a handle has no identity and is
+   matched by its name, size and modification date */
+const sameTrack = async (a, b) => {
+  if (!a || !b) {
+    return false;
+  }
+  // the link tracks are identified by their address
+  if (a.href || b.href) {
+    return Boolean(a.href && b.href && a.href === b.href);
+  }
+  // the local tracks with a handle are identified by their entry
+  if (a.handle && b.handle && a.handle.isSameEntry) {
+    try {
+      return await a.handle.isSameEntry(b.handle);
+    }
+    catch (e) {
+      return false;
+    }
+  }
+  return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+};
+
+/* add tracks to the playlist; the old entries of the same tracks are
+   replaced by the new copies */
+const add = async files => {
+  audio.i = audio.i || 0;
+  audio.files = audio.files || [];
+
+  // the repeats of the incoming batch collapse into their newest copy
+  const incoming = [];
   for (const file of files) {
+    for (let k = incoming.length - 1; k >= 0; k -= 1) {
+      if (await sameTrack(incoming[k], file)) {
+        incoming.splice(k, 1);
+      }
+    }
+    incoming.push(file);
+  }
+
+  // the old entries of the incoming tracks are removed from the highest
+  // index down so that the indices of the removals stay valid
+  let replaced = false;
+  for (let k = audio.files.length - 1; k >= 0; k -= 1) {
+    let dupe = false;
+    for (const file of incoming) {
+      if (await sameTrack(audio.files[k], file)) {
+        dupe = true;
+        break;
+      }
+    }
+    if (dupe) {
+      // the current track can be one of the replaced entries
+      replaced = replaced || k === (audio.i || 0);
+      removeAt(k, true);
+    }
+  }
+
+  /* the first new track becomes the current one; when its old copy was
+     playing, the cursor moves to the position of the replacement */
+  if (audio.files.length && incoming.length) {
+    audio.i = replaced ? audio.files.length : (audio.i + 1);
+  }
+
+  const view = document.getElementById('view');
+  for (const file of incoming) {
     const n = audio.files.push(file);
 
     view.option([
@@ -927,7 +1073,7 @@ const add = files => {
   }
 
   // remember the newly added tracks (best effort; never blocks the playback)
-  remember.save(files);
+  remember.save(incoming);
 };
 
 drag.onDrag(add);

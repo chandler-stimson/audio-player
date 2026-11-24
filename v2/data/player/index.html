@@ -78,6 +78,20 @@ Move to the beginning of the current track (Ctrl/Command + Shift + B or Shift + 
     </form>
   </dialog>
 
+  <!-- the read access of a remembered local track; the permission prompt of
+       the browser needs a user action that the automatic advancement cannot
+       provide, so the player pauses on this dialog instead -->
+  <dialog id="grant" aria-labelledby="grant-title">
+    <h1 id="grant-title">Read Access Needed</h1>
+    <p id="grant-body"></p>
+    <p id="grant-status" hidden></p>
+    <form method="dialog">
+      <button value="cancel">Close</button>
+      <button value="skip">Skip</button>
+      <button type="button" id="grant-ok" autofocus>Grant Access</button>
+    </form>
+  </dialog>
+
   <script type="text/javascript" src="components/progress-view.js"></script>
   <script type="text/javascript" src="components/audio-view.js"></script>
   <script type="text/javascript" src="components/list-view.js"></script>

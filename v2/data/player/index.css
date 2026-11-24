@@ -88,7 +88,7 @@ audio-view { /* stylelint-disable-line selector-type-no-unknown */
   margin: 5px 0;
 }
 
-/* the metadata and the delete-all confirmation dialogs */
+/* the metadata, the delete-all confirmation and the read-access dialogs */
 dialog {
   border: solid 1px #dadce0;
   border-radius: 8px;
@@ -161,9 +161,22 @@ dialog button:focus-visible {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-#metadata-status {
+#metadata-status,
+#grant-status {
   margin: 10px 0 0;
   color: #70757a;
+}
+#grant-body {
+  margin: 10px 0 0;
+}
+#grant-ok {
+  color: #fff;
+  border-color: #4285f4;
+  background-color: #4285f4;
+}
+#grant-ok:hover {
+  border-color: #3367d6;
+  background-color: #3367d6;
 }
 
 @media screen and (max-height: 200px) {

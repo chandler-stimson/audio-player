@@ -57,6 +57,24 @@ remember.toRecord = file => {
   return null;
 };
 
+/* two records describe the same track when they point to the same link or
+   the same local file; a stored handle is a fresh structured clone, so only
+   `isSameEntry` can compare it with another handle */
+remember.same = async (r, rec) => {
+  if (r.kind !== rec.kind) {
+    return false;
+  }
+  if (r.kind === 'file') {
+    try {
+      return await r.handle.isSameEntry(rec.handle);
+    }
+    catch (e) {
+      return false;
+    }
+  }
+  return r.href === rec.href;
+};
+
 /* serialize the saves so that concurrent additions cannot overwrite the
    stored list of each other */
 let queue = Promise.resolve();
@@ -82,7 +100,22 @@ remember.persist = async files => {
     }
 
     const list = await db.read();
-    await db.write([...list, ...records].slice(-prefs['remember-tracks']));
+    // the older records of the incoming tracks are dropped so that the
+    // stored list stays free of duplicates
+    const kept = [];
+    for (const r of list) {
+      let dupe = false;
+      for (const rec of records) {
+        if (await remember.same(r, rec)) {
+          dupe = true;
+          break;
+        }
+      }
+      if (dupe === false) {
+        kept.push(r);
+      }
+    }
+    await db.write([...kept, ...records].slice(-prefs['remember-tracks']));
   }
   catch (e) {
     console.warn('CANNOT_REMEMBER_TRACKS', e);
@@ -160,27 +193,10 @@ remember.unpersist = async file => {
       return; // the track was never stored (a dropped File without a handle)
     }
 
-    // the stored handles are fresh structured clones; only `isSameEntry` can
-    // compare them with the handle of the deleted track
-    const same = async r => {
-      if (r.kind !== record.kind) {
-        return false;
-      }
-      if (r.kind === 'file') {
-        try {
-          return await r.handle.isSameEntry(record.handle);
-        }
-        catch (e) {
-          return false;
-        }
-      }
-      return r.href === record.href;
-    };
-
     const list = await db.read();
     const kept = [];
     for (const r of list) {
-      if ((await same(r)) === false) {
+      if ((await remember.same(r, record)) === false) {
         kept.push(r);
       }
     }
