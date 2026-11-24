@@ -239,9 +239,22 @@ const done = (file, action) => {
   title();
 };
 
+/* serialize every playlist mutation; the identity checks of the additions
+   await real filesystem calls, so two mutations in flight would otherwise
+   interleave their index arithmetic on the shared playlist (the queue never
+   rejects, so one failed mutation cannot block the rest) */
+let mutating = Promise.resolve();
+const serialize = job => {
+  mutating = mutating.then(job).catch(e => console.warn('CANNOT_MUTATE_PLAYLIST', e));
+  return mutating;
+};
+
 /* a remembered local track is listed before its read permission is granted;
-   ask for the permission and replace the locked entry with the readable file */
-const unlock = async (file, index) => {
+   ask for the permission and replace the locked entry with the readable
+   file; the row is found again by its entry because the playlist can change
+   while the permission prompt is open; -1 is returned when the row was
+   removed in the meantime */
+const unlock = async file => {
   let state;
   try {
     state = await file.handle.requestPermission({mode: 'read'});
@@ -257,22 +270,27 @@ const unlock = async (file, index) => {
 
   const real = await file.handle.getFile();
   real.handle = file.handle;
-  audio.files[index] = real;
 
-  return real;
+  // the replacement is a playlist mutation as well, so it goes through the
+  // queue; a row that was removed in the meantime is not written back
+  return serialize(() => {
+    const i = audio.files ? audio.files.indexOf(file) : -1;
+    if (i !== -1) {
+      audio.files[i] = real;
+    }
+    return i;
+  });
 };
 
 /* the read permission of a locked track cannot be asked for without a user
    action; the automatic advancement pauses on the grant dialog and its
    Grant button provides the action that the prompt of the browser needs */
 const grantJob = {
-  file: null,
-  index: -1
+  file: null
 };
 
-const askAccess = (file, index, e) => {
+const askAccess = (file, e) => {
   grantJob.file = file;
-  grantJob.index = index;
 
   const grant = document.getElementById('grant');
   document.getElementById('grant-body').textContent =
@@ -316,16 +334,20 @@ const play = () => {
   // a remembered local track needs its read permission before it can be
   // decoded; selecting the track provides the gesture for the prompt
   if (file.locked) {
-    unlock(file, i).then(() => {
+    unlock(file).then(j => {
+      // the row was removed while the permission was being asked for
+      if (j === -1) {
+        return;
+      }
       // the row is readable now; revert it to a normal row
       if (file.cleanup) {
         file.cleanup();
       }
       // the track was not switched while the permission was being asked for
-      if ((audio.i || 0) === i) {
+      if ((audio.i || 0) === j) {
         play();
       }
-    }).catch(e => askAccess(file, i, e));
+    }).catch(e => askAccess(file, e));
     return;
   }
 
@@ -445,16 +467,20 @@ document.getElementById('skip-forward').addEventListener('click', () => {
   const status = document.getElementById('grant-status');
 
   document.getElementById('grant-ok').addEventListener('click', () => {
-    const {file, index} = grantJob;
+    const {file} = grantJob;
     // this click is the user action that the prompt needs
-    unlock(file, index).then(() => {
+    unlock(file).then(i => {
+      grant.close();
+      // the row was removed while the permission was being asked for
+      if (i === -1) {
+        return;
+      }
       // the row is readable now; revert it to a normal row
       if (file.cleanup) {
         file.cleanup();
       }
-      grant.close();
       // the track was not switched while the permission was being asked for
-      if ((audio.i || 0) === index) {
+      if ((audio.i || 0) === i) {
         play();
       }
     }).catch(e => {
@@ -481,7 +507,6 @@ document.getElementById('skip-forward').addEventListener('click', () => {
     // a stale return value must not leak into the next grant request
     grant.returnValue = '';
     grantJob.file = null;
-    grantJob.index = -1;
   });
 }
 
@@ -602,8 +627,8 @@ audio.focus();
   const grid = document.getElementById('metadata-grid');
   const status = document.getElementById('metadata-status');
 
-  // the row that the menu was opened for; -1 when it is the empty area
-  let menuIndex = -1;
+  // the row that the menu was opened for; null when it is the empty area
+  let menuFile = null;
 
   /* the hidden select of the list view mirrors the geometry of the rows; the
      row under a coordinate is the option that contains it */
@@ -634,10 +659,19 @@ audio.focus();
   const openMenu = (x, y) => {
     const has = audio.files && audio.files.length;
 
-    menuIndex = has ? rowAt(y) : -1;
-    document.getElementById('play-this').disabled = menuIndex === -1;
-    document.getElementById('delete-this').disabled = menuIndex === -1;
-    document.getElementById('show-metadata').disabled = menuIndex === -1;
+    /* the row is remembered by its entry: the additions and removals of
+       the meantime shift the indices, but the entry of the row stays the
+       same one */
+    menuFile = null;
+    if (has) {
+      const i = rowAt(y);
+      if (i !== -1) {
+        menuFile = audio.files[i] || null;
+      }
+    }
+    document.getElementById('play-this').disabled = menuFile === null;
+    document.getElementById('delete-this').disabled = menuFile === null;
+    document.getElementById('show-metadata').disabled = menuFile === null;
     document.getElementById('delete-all').disabled = !has;
 
     if (CSS.supports('anchor-name: --a')) {
@@ -810,8 +844,7 @@ audio.focus();
   /* show the metadata of the right-clicked track; the codec information of a
      track that was never decoded is fetched with an on-demand decode */
   const showMetadata = async () => {
-    const i = menuIndex;
-    const file = audio.files && audio.files[i];
+    const file = menuFile;
     closeMenu();
     if (!file) {
       return;
@@ -821,10 +854,15 @@ audio.focus();
     // a locked local track needs its read permission before it can be decoded
     if (file.locked) {
       try {
-        target = await unlock(file, i);
+        const i = await unlock(file);
+        // the row was removed while the permission was being asked for
+        if (i === -1) {
+          return;
+        }
         if (file.cleanup) {
           file.cleanup();
         }
+        target = audio.files[i];
       }
       catch (e) {
         metaJob.file = file;
@@ -963,8 +1001,13 @@ audio.focus();
   };
 
   document.getElementById('play-this').addEventListener('click', () => {
-    const i = menuIndex;
+    const file = menuFile;
     closeMenu();
+    if (!file) {
+      return;
+    }
+    // the row may have moved while the menu was open
+    const i = audio.files ? audio.files.indexOf(file) : -1;
     if (i === -1) {
       return;
     }
@@ -980,10 +1023,18 @@ audio.focus();
   });
 
   document.getElementById('delete-this').addEventListener('click', () => {
-    const i = menuIndex;
+    const file = menuFile;
     closeMenu();
-    if (i !== -1) {
-      removeAt(i);
+    if (file) {
+      /* the removal is a playlist mutation, so it goes through the queue;
+         the place of the row is found again inside the job because the
+         playlist may have changed since the menu was opened */
+      serialize(() => {
+        const i = audio.files ? audio.files.indexOf(file) : -1;
+        if (i !== -1) {
+          removeAt(i);
+        }
+      });
     }
   });
 
@@ -1002,7 +1053,8 @@ audio.focus();
     const confirmation = document.getElementById('confirm');
     confirmation.addEventListener('close', () => {
       if (confirmation.returnValue === 'delete-all') {
-        removeAll();
+        // the removal waits for the playlist mutations in flight
+        serialize(removeAll);
       }
       // a stale return value must not leak into the next confirmation
       confirmation.returnValue = '';
@@ -1139,7 +1191,7 @@ const sameTrack = async (a, b) => {
 
 /* add tracks to the playlist; the old entries of the same tracks are
    replaced by the new copies */
-const add = async files => {
+const addTracks = async files => {
   audio.i = audio.i || 0;
   audio.files = audio.files || [];
 
@@ -1194,6 +1246,12 @@ const add = async files => {
   remember.save(incoming);
 };
 
+/* the additions run one after another and never before the remembered
+   tracks are restored; the identity checks of addTracks await real
+   filesystem calls, so two additions in flight would otherwise interleave
+   their index arithmetic on the shared playlist */
+const add = files => restored.then(() => serialize(() => addTracks(files)));
+
 drag.onDrag(add);
 chrome.runtime.onMessage.addListener((request, sender, response) => {
   if (request.method === 'jobs') {
@@ -1219,55 +1277,60 @@ const restored = remember.restore().then(({files, index}) => {
     return;
   }
 
-  audio.files = audio.files || [];
+  /* the restored rows are a playlist mutation, so they go through the
+     queue; an addition can no longer interleave with them (the queue is
+     empty at this point, so the job runs right away) */
+  serialize(() => {
+    audio.files = audio.files || [];
 
-  const view = document.getElementById('view');
-  for (const file of files) {
-    const n = audio.files.push(file);
+    const view = document.getElementById('view');
+    for (const file of files) {
+      const n = audio.files.push(file);
 
-    const o = view.option([
-      {name: file.name},
-      {name: file.href || (file.locked ? 'Local File (read permission needed)' : 'Local File')}
-    ], file.name, n, false);
-    o.insert();
-    // a locked track becomes readable once its read permission is granted;
-    // the row handles its own click because the current row cannot be
-    // re-selected through the hidden select of the list view
-    if (file.locked) {
-      const div = o._internal.div;
-      div.style.opacity = '0.6';
-      div.style.pointerEvents = 'initial';
-      div.style.cursor = 'pointer';
+      const o = view.option([
+        {name: file.name},
+        {name: file.href || (file.locked ? 'Local File (read permission needed)' : 'Local File')}
+      ], file.name, n, false);
+      o.insert();
+      // a locked track becomes readable once its read permission is granted;
+      // the row handles its own click because the current row cannot be
+      // re-selected through the hidden select of the list view
+      if (file.locked) {
+        const div = o._internal.div;
+        div.style.opacity = '0.6';
+        div.style.pointerEvents = 'initial';
+        div.style.cursor = 'pointer';
 
-      const handler = () => {
-        audio.i = n - 1;
-        play();
-      };
-      div.addEventListener('click', handler);
+        const handler = () => {
+          audio.i = n - 1;
+          play();
+        };
+        div.addEventListener('click', handler);
 
-      // revert the row to a normal one once the file is readable
-      file.cleanup = () => {
-        div.removeEventListener('click', handler);
-        div.style.pointerEvents = '';
-        div.style.cursor = '';
-        div.style.opacity = '';
-        div.lastElementChild.textContent = 'Local File';
-      };
+        // revert the row to a normal one once the file is readable
+        file.cleanup = () => {
+          div.removeEventListener('click', handler);
+          div.style.pointerEvents = '';
+          div.style.cursor = '';
+          div.style.opacity = '';
+          div.lastElementChild.textContent = 'Local File';
+        };
+      }
     }
-  }
 
-  // the remembered playing track is the current one; the last restored
-  // track is the fallback when it is not restorable anymore
-  audio.i = index === -1 ? audio.files.length - 1 : index;
-  view.selectedIndex = audio.i + 1;
-  title();
+    // the remembered playing track is the current one; the last restored
+    // track is the fallback when it is not restorable anymore
+    audio.i = index === -1 ? audio.files.length - 1 : index;
+    view.selectedIndex = audio.i + 1;
+    title();
 
-  // the play button of the audio view is disabled while no source is loaded;
-  // a selected track is a playable source for it
-  const parent = audio.shadowRoot.getElementById('parent');
-  if (parent.getAttribute('mode') === 'nosrc') {
-    parent.setAttribute('mode', 'play');
-  }
+    // the play button of the audio view is disabled while no source is
+    // loaded; a selected track is a playable source for it
+    const parent = audio.shadowRoot.getElementById('parent');
+    if (parent.getAttribute('mode') === 'nosrc') {
+      parent.setAttribute('mode', 'play');
+    }
+  });
 }).catch(e => console.warn('CANNOT_RESTORE_TRACKS', e));
 
 if (args.has('json')) {
