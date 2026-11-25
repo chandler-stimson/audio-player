@@ -1,22 +1,38 @@
 /* global decoder */
 
 const htime = delta => {
-  const days = Math.floor(delta / 86400);
+  let days = Math.floor(delta / 86400);
   delta -= days * 86400;
-  const hours = Math.floor(delta / 3600) % 24;
+  let hours = Math.floor(delta / 3600);
   delta -= hours * 3600;
-  const minutes = Math.floor(delta / 60) % 60;
+  let minutes = Math.floor(delta / 60);
   delta -= minutes * 60;
-  const seconds = (delta % 60).toFixed(0);
+  let seconds = Math.round(delta);
 
+  // a rounded second carries into the greater units: the last half
+  // second of a minute must not render as a ":60" tail
+  if (seconds === 60) {
+    seconds = 0;
+    minutes += 1;
+  }
+  if (minutes === 60) {
+    minutes = 0;
+    hours += 1;
+  }
+  if (hours === 24) {
+    hours = 0;
+    days += 1;
+  }
+
+  const two = n => ('0' + n).slice(-2);
   if (days) {
-    return days + ':' + hours + ':' + minutes + ':' + ('0' + seconds).substr(-2);
+    return days + ':' + two(hours) + ':' + two(minutes) + ':' + two(seconds);
   }
   else if (hours) {
-    return hours + ':' + minutes + ':' + ('0' + seconds).substr(-2);
+    return hours + ':' + two(minutes) + ':' + two(seconds);
   }
   else {
-    return minutes + ':' + ('0' + seconds).substr(-2);
+    return minutes + ':' + two(seconds);
   }
 };
 

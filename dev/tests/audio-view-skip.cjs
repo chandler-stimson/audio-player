@@ -58,13 +58,15 @@ const makeWorld = () => {
 /* ----------------------------------------------------------------------- run */
 
 /* dispatch a key event on the host; the fake element runs the listeners
-   that the component registered on itself */
+   that the component registered on itself; the guard of the handler wants
+   the path to begin at the host, as the real event of a host key does */
 const key = (el, code, meta = false) => el.dispatchEvent({
   type: 'keydown',
   code,
   metaKey: meta,
   ctrlKey: meta,
-  shiftKey: false
+  shiftKey: false,
+  composedPath: () => [el]
 });
 
 const settle = () => new Promise(resolve => setImmediate(resolve));

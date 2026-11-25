@@ -350,6 +350,15 @@ const makePlayerWorld = () => {
     FileReader,
     drag,
     launchQueue,
+    /* the Web Lock that elects the copy answering a broadcast; the
+       single copy of a test always wins it */
+    navigator: {
+      locks: {
+        request(name, options, fn) {
+          return fn({});
+        }
+      }
+    },
     decoder: {cancel() {}},
     remember,
     htime: d => d

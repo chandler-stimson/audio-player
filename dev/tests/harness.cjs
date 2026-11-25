@@ -271,6 +271,12 @@ const loadAudioView = ({decoder, world}) => {
       }
     },
     HTMLElement,
+    /* the audio view observes the mode attribute of its root to keep the
+       play button label truthful; no test drives attribute writes
+       through a real observer, so the stub only needs to exist */
+    MutationObserver: class {
+      observe() {}
+    },
     document: undefined,
     window: {
       customElements: {
