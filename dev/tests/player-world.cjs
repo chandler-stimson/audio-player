@@ -313,10 +313,6 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
   const document = {
     title: '',
     activeElement: null,
-    // the player asks this before the prompt of the browser; a test that
-    // drives the hidden player (the media keys, the automatic advancement)
-    // overrides it with a false return
-    hasFocus: () => true,
     getElementById(id) {
       if (elements.has(id) === false) {
         const el = id === 'audio' ? audio : (id === 'view' ? view : makeElement(id));

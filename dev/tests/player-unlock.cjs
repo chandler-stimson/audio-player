@@ -12,11 +12,11 @@
      - denied: a denied ask opens the Grant Access dialog and asks nothing
        else; the Grant button re-asks and the batch follows the new grant
      - front: an ask without a user action (the automatic advancement and
-       the media keys) raises the window of the player before the
-       Grant Access dialog opens
-     - hidden: a hidden player never asks with the prompt of the browser
-       (it would open behind the window); the dialog does the asking once
-       the window was raised, and a granted track plays in the background
+       the media keys) opens the Grant Access dialog; the raise of the
+       window was already sent with the ask itself
+     - hidden: a hidden player shows the original permission request and
+       the worker raises the window at the same time (fire and forget); a
+       granted track plays in the background without a raise
      - gone: a sibling locked row that was removed while a prompt was open
        does not disturb the swap or the batch
 
@@ -273,68 +273,49 @@ const gone = async () => {
 };
 
 /* the OS media keys and the automatic advancement reach a hidden player;
-   there the read permission is not asked for (the prompt of the browser
-   would open behind the window) — the grant dialog asks for it instead */
+   the original permission request is shown there anyway, and the raise of
+   the window rides along with it (fire and forget) */
 const hidden = async () => {
   const world = makePlayerWorld();
-  world.document.hasFocus = () => false;
 
   const h1 = world.makeHandle(1, {query: 'prompt', real: readable('a.mp3')});
-  const h2 = world.makeHandle(2, {query: 'granted', real: readable('b.mp3')});
   const asks1 = counted(h1, () => Promise.resolve('granted'));
-  const asks2 = counted(h2, () => Promise.resolve('granted'));
-
   const L1 = world.makeFile('a.mp3', h1, {locked: true});
-  const L2 = world.makeFile('b.mp3', h2, {locked: true});
-  world.finishRestore([L1, L2], 0);
+  world.finishRestore([L1], 0);
   await settleAll();
 
   // the automatic path starts the selected locked track
   world.audio.dispatch('empty');
   await settleAll();
 
-  // the permission was never asked for; the window was raised and the
-  // grant dialog opened instead
-  if (asks1() !== 0) {
-    throw Error('the hidden player asked for the permission ' + asks1() + ' time(s)');
+  // the ask went out together with the raise of the window; the ask of
+  // the world resolves with a grant, so the track plays without the dialog
+  if (asks1() !== 1) {
+    throw Error('the hidden player did not ask for the permission');
   }
   const message = world.sentMessages.find(m => m.method === 'bring-to-front');
   if (!message || message.windowId !== 1) {
-    throw Error('the hidden player did not raise its window');
+    throw Error('the hidden player did not raise its window with the ask');
   }
-  const grant = world.document.getElementById('grant');
-  if (grant.open !== true) {
-    throw Error('the grant dialog did not open for the hidden player');
+  if (world.document.getElementById('grant').open !== false) {
+    throw Error('the grant dialog opened for a granted ask');
   }
-
-  // the Grant button of the raised dialog provides the user action
-  world.document.getElementById('grant-ok').dispatch('click');
-  await settleAll();
-
-  if (asks1() !== 1) {
-    throw Error('the Grant button asked ' + asks1() + ' time(s)');
-  }
-  // the batch follows the one grant: the second locked track is readable too
   const files = world.audio.files;
-  if (files.length !== 2 || files[0].handle !== h1 || files[0].locked ||
-      files[1].handle !== h2 || files[1].locked) {
-    throw Error('the playlist is [' + names(files) + '] after the grant');
-  }
-  if (asks2() !== 0) {
-    throw Error('the second track was asked ' + asks2() + ' time(s)');
+  if (files.length !== 1 || files[0].handle !== h1 || files[0].locked) {
+    throw Error('the granted ask did not replace the locked entry');
   }
   if (world.audio.started.length !== 1 || world.audio.started[0] !== files[0]) {
-    throw Error('the granted track did not resume');
+    throw Error('the granted ask did not resume the track');
   }
   world.checkMirrored();
-  console.log('hidden ok: a hidden player asks through the dialog, not the prompt');
+  console.log('hidden ok: the hidden player asks while the worker raises the window');
 };
 
-/* a hidden player whose read access is still granted plays in the
-   background without a dialog and without raising the window */
+/* a hidden player whose read access is already granted plays in the
+   background: the ask resolves without a prompt of its own and the window
+   is not raised (the raise rides on the prompt, and there is none) */
 const hiddenGranted = async () => {
   const world = makePlayerWorld();
-  world.document.hasFocus = () => false;
 
   const h1 = world.makeHandle(1, {query: 'granted', real: readable('a.mp3')});
   const asks1 = counted(h1, () => Promise.resolve('granted'));
@@ -345,8 +326,10 @@ const hiddenGranted = async () => {
   world.audio.dispatch('empty');
   await settleAll();
 
-  if (asks1() !== 0) {
-    throw Error('the hidden player asked for the granted permission');
+  // the ask still went out (the original flow), but it resolved without a
+  // prompt and without raising the window
+  if (asks1() !== 1) {
+    throw Error('the granted track was not asked for its permission');
   }
   if (world.document.getElementById('grant').open !== false) {
     throw Error('the grant dialog opened for a granted track');
