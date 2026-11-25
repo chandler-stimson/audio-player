@@ -41,9 +41,21 @@ const fromEntry = async (files, entry) => {
   collect(files, file);
 };
 
-const readEntries = (files, entry) => new Promise((resolve, reject) => {
+/* collect the files of a dropped entry (the legacy API without handles);
+   readEntries() returns the directory's entries in batches, so keep reading
+   until a batch comes back empty */
+const readEntries = async (files, entry) => {
   const directoryReader = entry.createReader();
-  directoryReader.readEntries(async entries => {
+
+  while (true) {
+    const entries = await new Promise((resolve, reject) => {
+      directoryReader.readEntries(resolve, reject);
+    });
+
+    if (!entries.length) {
+      break;
+    }
+
     for (const entry of entries) {
       if (entry.isFile) {
         await fromEntry(files, entry).catch(e => console.warn('CANNOT_ADD_FILE', e));
@@ -52,9 +64,8 @@ const readEntries = (files, entry) => new Promise((resolve, reject) => {
         await readEntries(files, entry).catch(e => console.warn('CANNOT_BROWSE', e));
       }
     }
-    resolve();
-  }, reject);
-});
+  }
+};
 
 const drop = async es => {
   const files = [];
