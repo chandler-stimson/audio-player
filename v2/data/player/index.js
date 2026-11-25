@@ -314,7 +314,15 @@ const unlock = async file => {
   return serialize(() => {
     const i = audio.files ? audio.files.indexOf(file) : -1;
     if (i !== -1) {
+      const cleanup = file.cleanup;
       audio.files[i] = real;
+
+      // the replacement owns the row from here on, so it inherits the row
+      // cleanup and is normalized before any later mutation can delete it
+      if (cleanup) {
+        real.cleanup = cleanup;
+        cleanup();
+      }
     }
     return i;
   });
@@ -389,10 +397,6 @@ const play = () => {
       // the row was removed while the permission was being asked for
       if (j === -1) {
         return;
-      }
-      // the row is readable now; revert it to a normal row
-      if (file.cleanup) {
-        file.cleanup();
       }
       // the track was not switched while the permission was being asked for
       if ((audio.i || 0) === j) {
@@ -535,10 +539,6 @@ document.getElementById('skip-forward').addEventListener('click', () => {
       // the row was removed while the permission was being asked for
       if (i === -1) {
         return;
-      }
-      // the row is readable now; revert it to a normal row
-      if (file.cleanup) {
-        file.cleanup();
       }
       // the track was not switched while the permission was being asked for
       if ((audio.i || 0) === i) {
@@ -942,9 +942,6 @@ audio.focus();
         if (i === -1) {
           return;
         }
-        if (file.cleanup) {
-          file.cleanup();
-        }
         target = audio.files[i];
       }
       catch (e) {
@@ -1244,7 +1241,8 @@ const removeAt = (index, silent = false) => {
     if (silent) {
       return;
     }
-    // the navigation buttons and the title follow the shorter playlist
+    // the selection and navigation buttons follow the shifted playlist
+    view.selectedIndex = (audio.i || 0) + 1;
     previous.disabled = (audio.i || 0) === 0;
     next.disabled = (audio.i || 0) >= audio.files.length - 1;
     title();

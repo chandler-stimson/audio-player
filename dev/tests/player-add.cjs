@@ -17,6 +17,8 @@
        waits for the restored rows (it plays as the newly added one)
      - unlock: a locked track whose permission is granted after its row
        was replaced does not write its readable copy over the new row
+     - unlocked row: the readable replacement inherits the row cleanup and
+       keeps selection/navigation synchronized when it is deleted
      - menu: the context menu remembers its row by its entry, so a
        deletion after the playlist changed removes the right row (or
        nothing when the row is gone)
@@ -240,6 +242,79 @@ const unlockSkip = async () => {
   console.log('unlock ok: a vanished row is not written back');
 };
 
+/* the readable replacement inherits the locked row's cleanup, so the row
+   becomes a normal playlist row and its deletion keeps the selection and
+   navigation controls synchronized */
+const unlockInteraction = async () => {
+  const world = makePlayerWorld();
+  const handle = world.makeHandle(7, {
+    real: {name: 'locked.mp3', size: 100, lastModified: 1, type: 'audio/x-test'}
+  });
+  const locked = world.makeFile('locked.mp3', handle, {locked: true});
+  const other = {name: 'other.mp3', href: 'https://x/other.mp3'};
+  world.finishRestore([locked, other], 1);
+  await settleAll();
+
+  const row = world.view.rows[0];
+  const div = row._internal.div;
+  let cleanups = 0;
+  const cleanup = locked.cleanup;
+  locked.cleanup = () => {
+    cleanups += 1;
+    cleanup();
+  };
+
+  // the locked row supplies the user action that grants the permission
+  div.dispatch('click');
+  await settleAll();
+
+  const readable = world.audio.files[0];
+  if (readable === locked || readable.handle !== handle) {
+    throw Error('the locked entry was not replaced by its readable file');
+  }
+  if (readable.cleanup !== locked.cleanup) {
+    throw Error('the readable replacement did not inherit the row cleanup');
+  }
+  if (cleanups !== 1) {
+    throw Error('the replacement did not normalize its row after the swap');
+  }
+  if ((div.listeners.click || []).length !== 0 ||
+      div.style.opacity || div.style.pointerEvents || div.style.cursor) {
+    throw Error('the unlocked row kept its locked interaction state');
+  }
+  if (div.lastElementChild.textContent !== 'Local File') {
+    throw Error('the unlocked row still asks for read permission');
+  }
+  world.checkMirrored();
+
+  // keep the other track current, then delete the restored row before it
+  world.view.onchange({target: {selectedIndex: 2}});
+  await settleAll();
+  world.openMenuAt(10);
+  world.clickMenu('delete-this');
+  await settleAll();
+
+  if (world.audio.files.length !== 1 || world.audio.files[0] !== other) {
+    throw Error('the unlocked row was not deleted from the playlist');
+  }
+  if (cleanups !== 2) {
+    throw Error('the replacement did not run its cleanup when deleted');
+  }
+  if (world.audio.i !== 0 || world.view.selectedIndex !== 1) {
+    throw Error('the selection did not follow the shorter playlist');
+  }
+  const previous = world.document.getElementById('previous');
+  const next = world.document.getElementById('next');
+  if (previous.disabled !== true || next.disabled !== true) {
+    throw Error('the navigation buttons did not follow the shorter playlist');
+  }
+  if (world.document.title !== '[1/1] other.mp3 :: Audio Player') {
+    throw Error('the title did not follow the shorter playlist');
+  }
+  world.checkMirrored();
+  console.log('unlocked row ok: the replacement behaves and deletes like a normal row');
+};
+
 /* the context menu remembers its row by its entry, so a deletion after the
    playlist changed removes the right row (or nothing when it is gone) */
 const menuRow = async () => {
@@ -290,6 +365,7 @@ const run = async () => {
   await order();
   await jobsAfterRestore();
   await unlockSkip();
+  await unlockInteraction();
   await menuRow();
 
   console.log('PLAYER-ADD TEST PASSED');
