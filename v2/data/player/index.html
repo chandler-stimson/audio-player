@@ -15,6 +15,7 @@
       <list-view drag="false" headers="false" id="view">
         <span width="1fr">Title</span>
         <span width="2fr">Link</span>
+        <span width="70px">Duration</span>
       </list-view>
     </div>
   </div>
@@ -78,6 +79,7 @@ Move to the beginning of the current track (Ctrl/Command + Shift + B or Shift + 
       <button type="button" id="delete-this">Delete This</button>
       <button type="button" id="show-metadata">Show Metadata</button>
       <hr>
+      <button type="button" id="resolve-durations">Resolve all Durations</button>
       <button type="button" id="delete-all">Delete All</button>
     </div>
   </div>
@@ -100,6 +102,19 @@ Move to the beginning of the current track (Ctrl/Command + Shift + B or Shift + 
     <p id="metadata-status" hidden></p>
     <form method="dialog">
       <button value="close" autofocus>Close</button>
+    </form>
+  </dialog>
+
+  <!-- the batch resolution of the Duration column; the lengths of the
+       tracks that were never decoded are read one after another while the
+       dialog is open -->
+  <dialog id="resolve" aria-labelledby="resolve-title">
+    <h1 id="resolve-title">Resolve all Durations</h1>
+    <p id="resolve-track"></p>
+    <progress id="resolve-progress" aria-labelledby="resolve-track"></progress>
+    <p id="resolve-status" role="status" hidden></p>
+    <form method="dialog">
+      <button value="cancel" id="resolve-button" autofocus>Cancel</button>
     </form>
   </dialog>
 

@@ -752,6 +752,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
           // the exact length of a stream that could not tell in advance
           s.duration = r.covered;
           this.shadowRoot.getElementById('duration').textContent = htime(s.duration);
+          // the length was unknown when the track started; the page learns
+          // it now (the Duration column of the playlist follows this report)
+          this.dispatchEvent(new Event('durationchange'));
         }
         this.#scheduleRun();
         this.#maintain();

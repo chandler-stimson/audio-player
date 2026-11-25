@@ -235,6 +235,9 @@ const cacheSet = (file, decoded) => {
   cache.delete(file);
   cache.set(file, decoded); // the most recent entry is always last
 
+  // the decode carries the length of the track; its playlist row follows it
+  writeDuration(file, decoded.audioBuffer.duration);
+
   let bytes = 0;
   for (const d of cache.values()) {
     bytes += decodedBytes(d);
@@ -248,6 +251,33 @@ const cacheSet = (file, decoded) => {
     cache.delete(f);
   }
 };
+
+/* the Duration column of the playlist: a row is created with a blank
+   placeholder and the length of its track is written in when the player
+   learns it (the decode of the playback or of the prefetch, or the stream
+   header that the metadata dialog reads). The row is found by the identity
+   of the track in the live playlist, so a removed or replaced row can
+   never receive the length of another track */
+const writeDuration = (file, seconds) => {
+  if (!file || Number.isFinite(seconds) === false || seconds <= 0) {
+    return;
+  }
+  const i = (audio.files || []).indexOf(file);
+  if (i === -1) {
+    return;
+  }
+  const o = document.getElementById('view').options[i];
+  if (o) {
+    o._internal.div.lastElementChild.textContent = htime(seconds);
+  }
+};
+
+/* the length of the playing track is known once its decode or its stream
+   header lands; the row of the current track follows it (durationchange
+   reports the length of a stream that could not tell it up front) */
+const updateDurationRow = () => writeDuration(audio.file, audio.duration);
+audio.addEventListener('loadedmetadata', updateDurationRow);
+audio.addEventListener('durationchange', updateDurationRow);
 
 /* the track that follows the current one in linear mode */
 const nextFile = () => {
@@ -848,6 +878,7 @@ audio.focus();
     document.getElementById('play-this').disabled = menuFile === null;
     document.getElementById('delete-this').disabled = menuFile === null;
     document.getElementById('show-metadata').disabled = menuFile === null;
+    document.getElementById('resolve-durations').disabled = !has;
     document.getElementById('delete-all').disabled = !has;
 
     if (CSS.supports('anchor-name: --a')) {
@@ -1095,6 +1126,8 @@ audio.focus();
           meta: session.meta,
           duration: session.meta['Duration']
         });
+        // the header of the stream carries the length of the track as well
+        writeDuration(target, session.meta['Duration']);
         status.textContent = '';
         status.hidden = true;
         session.close().catch(() => {});
@@ -1152,6 +1185,237 @@ audio.focus();
       status.hidden = false;
     }
   };
+
+  /* ------------------------------------------------- the Duration batch */
+
+  const resolveDialog = document.getElementById('resolve');
+  const resolveTrack = document.getElementById('resolve-track');
+  const resolveProgress = document.getElementById('resolve-progress');
+  const resolveStatus = document.getElementById('resolve-status');
+  const resolveButton = document.getElementById('resolve-button');
+
+  // the batch that is running right now; the dialog is modal while it runs,
+  // so the playlist cannot be reached and no second batch can start
+  let resolving = false;
+  let resolveCancel = false;
+
+  /* the report of the finished batch; the tracks of the three problem
+     groups are named so that the user knows what stayed blank */
+  const resolveSummary = counts => {
+    const lines = [];
+    const n = counts.resolved;
+    lines.push(n === 1 ? 'Resolved the length of 1 track.' :
+      'Resolved the lengths of ' + n + ' tracks.');
+    if (counts.known) {
+      lines.push(counts.known === 1 ?
+        '1 track had its length already.' :
+        counts.known + ' tracks had their lengths already.');
+    }
+    if (counts.blank.length) {
+      lines.push('No length reported: ' + counts.blank.join(', ') + '.');
+    }
+    if (counts.locked.length) {
+      lines.push('Read access needed: ' + counts.locked.join(', ') + '.');
+    }
+    if (counts.failed.length) {
+      lines.push('Cannot read: ' + counts.failed.join(', ') + '.');
+    }
+    return lines.join(' ');
+  };
+
+  const resetResolveDialog = () => {
+    resolveTrack.hidden = false;
+    resolveProgress.hidden = false;
+    // the size of the batch is not known before the permission sweep ran;
+    // the bar waits in its indeterminate state until then
+    resolveProgress.removeAttribute('value');
+    resolveStatus.textContent = '';
+    resolveStatus.hidden = true;
+    resolveButton.textContent = 'Cancel';
+    resolveButton.value = 'cancel';
+  };
+
+  /* the batch is done; the dialog stays open with its report and its Close */
+  const finishResolve = counts => {
+    resolveTrack.hidden = true;
+    resolveProgress.hidden = true;
+    resolveButton.textContent = 'Close';
+    resolveButton.value = 'close';
+    resolveStatus.hidden = false;
+    resolveStatus.textContent = resolveSummary(counts);
+  };
+
+  /* resolve the durations of the whole playlist one after another; the
+     batch reads only: it never deletes or plays a track, and a track that
+     cannot be read is reported instead of stopping the rest */
+  const resolveDurations = async () => {
+    const counts = {
+      resolved: 0,
+      known: 0,
+      blank: [],
+      locked: [],
+      failed: []
+    };
+
+    /* the read permissions are asked for first, while the click that
+       started the batch is still a fresh user action; one granted ask
+       restores every locked entry that the browser remembers (the sweep
+       of unlock) */
+    const locked = (audio.files || []).filter(f => f.locked);
+    if (locked.length) {
+      resolveTrack.textContent = 'Asking for the read access of ' +
+        (locked.length === 1 ? '1 track' : locked.length + ' tracks') + '...';
+      for (const file of locked) {
+        if (resolveCancel || !audio.files ||
+            audio.files.includes(file) === false) {
+          continue; // the row was removed while a prompt was open
+        }
+        try {
+          await unlock(file);
+        }
+        catch (e) {
+          // denied or unaskable; the track is counted at its turn below
+        }
+      }
+    }
+    if (resolveCancel) {
+      return;
+    }
+
+    /* the live playlist is the truth now: the readable replacements of the
+       sweep sit at the places of their locked entries */
+    const files = (audio.files || []).slice();
+    const total = files.length;
+    resolveProgress.max = total;
+
+    for (let i = 0; i < total; i += 1) {
+      if (resolveCancel) {
+        return;
+      }
+      const file = files[i];
+      resolveProgress.value = i;
+      resolveTrack.textContent = 'Resolving ' + file.name +
+        ' (' + (i + 1) + ' of ' + total + ')';
+
+      // the track may have left the playlist while an earlier one ran
+      if (!audio.files || audio.files.includes(file) === false) {
+        continue;
+      }
+
+      // a locked entry that survived the sweep keeps its read permission
+      // problem; asking it here cannot succeed without a fresh user action
+      if (file.locked) {
+        counts.locked.push(file.name);
+        continue;
+      }
+
+      // everything that is decoded already
+      const known = knownOf(file);
+      if (known && known.duration) {
+        writeDuration(file, known.duration);
+        counts.known += 1;
+        continue;
+      }
+
+      // a large track or a network track: the header of its stream is read
+      // only and no sample is decoded; a stream that tells no length in its
+      // header stays blank (decoding it to the end is not worth it)
+      if (file.href || (file.size && file.size > STREAM_LIMIT)) {
+        try {
+          const session = await decoder.open(file.href ? {
+            href: file.href,
+            owner: 'meta'
+          } : {
+            file,
+            owner: 'meta'
+          });
+          const duration = session.meta && session.meta['Duration'];
+          session.close().catch(() => {});
+          if (resolveCancel) {
+            return;
+          }
+          if (audio.files.includes(file) === false) {
+            continue; // the row left the playlist while the header was read
+          }
+          if (duration) {
+            writeDuration(file, duration);
+            counts.resolved += 1;
+          }
+          else {
+            counts.blank.push(file.name);
+          }
+        }
+        catch (e) {
+          if (resolveCancel) {
+            return;
+          }
+          counts.failed.push(file.name);
+        }
+        continue;
+      }
+
+      // a small local file is decoded on demand; the decoded result is
+      // kept so that the track starts instantly afterwards
+      try {
+        const arrayBuffer = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsArrayBuffer(file);
+        });
+        if (resolveCancel) {
+          return;
+        }
+        const decoded = await decoder.decode({
+          name: 'input',
+          arrayBuffer,
+          owner: 'meta'
+        });
+        if (resolveCancel) {
+          return;
+        }
+        // the row may have been replaced while the decode ran
+        if (!audio.files || audio.files.includes(file) === false) {
+          continue;
+        }
+        cacheSet(file, decoded); // the row follows the cached decode
+        counts.resolved += 1;
+      }
+      catch (e) {
+        if (resolveCancel) {
+          return;
+        }
+        counts.failed.push(file.name);
+      }
+    }
+
+    finishResolve(counts);
+  };
+
+  const startResolve = () => {
+    if (resolving || !(audio.files && audio.files.length)) {
+      return;
+    }
+    resetResolveDialog();
+    if (resolveDialog.open === false) {
+      resolveDialog.showModal();
+    }
+    resolving = true;
+    resolveCancel = false;
+    resolveDurations().catch(e => console.warn('CANNOT_RESOLVE_DURATIONS', e));
+  };
+
+  // any close of the dialog stops the batch (the Cancel button, the Esc
+  // key); the in-flight read of the meta worker is not needed anymore
+  resolveDialog.addEventListener('close', () => {
+    if (resolving) {
+      resolving = false;
+      resolveCancel = true;
+      decoder.cancel('meta');
+    }
+    // a stale return value must not leak into the next run
+    resolveDialog.returnValue = '';
+  });
 
   /* remove every track from the playlist and forget all of them */
   const removeAll = () => {
@@ -1213,6 +1477,11 @@ audio.focus();
   });
 
   document.getElementById('show-metadata').addEventListener('click', showMetadata);
+
+  document.getElementById('resolve-durations').addEventListener('click', () => {
+    closeMenu();
+    startResolve();
+  });
 
   document.getElementById('delete-all').addEventListener('click', () => {
     closeMenu();
@@ -1407,7 +1676,8 @@ const addTracks = async files => {
 
     view.option([
       {name: file.name},
-      {name: file.href || 'Local File'}
+      {name: file.href || 'Local File'},
+      {name: '-', part: 'duration'}
     ], file.name, n, false).insert();
   }
   updatePlaylistEmpty();
@@ -1491,7 +1761,8 @@ const restored = remember.restore().then(({files, index}) => {
 
       const o = view.option([
         {name: file.name},
-        {name: file.href || (file.locked ? 'Local File (read permission needed)' : 'Local File')}
+        {name: file.href || (file.locked ? 'Local File (read permission needed)' : 'Local File')},
+        {name: '-', part: 'duration'}
       ], file.name, n, false);
       o.insert();
       // a locked track becomes readable once its read permission is granted;
@@ -1499,6 +1770,8 @@ const restored = remember.restore().then(({files, index}) => {
       // re-selected through the hidden select of the list view
       if (file.locked) {
         const div = o._internal.div;
+        // the Link cell of the row; the duration placeholder is the last one
+        const link = div.lastElementChild.previousElementSibling;
         div.style.opacity = '0.6';
         div.style.pointerEvents = 'initial';
         div.style.cursor = 'pointer';
@@ -1515,7 +1788,7 @@ const restored = remember.restore().then(({files, index}) => {
           div.style.pointerEvents = '';
           div.style.cursor = '';
           div.style.opacity = '';
-          div.lastElementChild.textContent = 'Local File';
+          link.textContent = 'Local File';
         };
       }
     }

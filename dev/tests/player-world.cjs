@@ -92,6 +92,9 @@ const makeElement = (id = '') => {
     getAttribute(k) {
       return el.attrs[k];
     },
+    removeAttribute(k) {
+      delete el.attrs[k];
+    },
     matches: () => false,
     contains: () => false,
     getBoundingClientRect: () => ({top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0}),
@@ -102,6 +105,8 @@ const makeElement = (id = '') => {
       el.open = false;
     },
     focus() {},
+    // the metadata grid appends its cells; the cells stay inert here
+    append() {},
     // a permissive sub-element: enough for the <title> tooltips and the menu
     // button lookup of openMenu
     querySelector: () => ({
@@ -210,6 +215,17 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
     resetCount: 0,
     pauseCount: 0,
 
+    // the live length of the loaded track, like the real element reports it
+    get duration() {
+      if (this.audioBuffer) {
+        return this.audioBuffer.duration;
+      }
+      if (this.stream) {
+        return this.stream.duration;
+      }
+      return 0;
+    },
+
     addEventListener(type, fn) {
       (audio.listeners[type] = audio.listeners[type] || []).push(fn);
     },
@@ -252,14 +268,27 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
     selectedIndex: 0,
     getBoundingClientRect: () => ({top: 0, left: 0, width: 400, height: rows.length * 20})
   };
-  const makeDiv = () => {
+  const makeDiv = parts => {
     const div = makeElement();
-    div.lastElementChild = {textContent: ''};
+    // the cells of a real row: the hidden drag handle, the title, the link
+    // and the duration placeholder; the real spans copy the `name` of their
+    // part at creation, and the page walks back from the last cell to reach
+    // the link cell (a locked row reverts its text after an unlock)
+    const link = {textContent: (parts[parts.length - 2] || {}).name || ''};
+    div.lastElementChild = {
+      textContent: (parts[parts.length - 1] || {}).name || '',
+      previousElementSibling: link
+    };
     return div;
   };
   const view = {
     rows,
     onchange: null,
+    // the real list view exposes its rows; the page resolves the row of a
+    // track by its index in audio.files
+    get options() {
+      return rows;
+    },
     shadowRoot: {
       getElementById: () => select
     },
@@ -269,7 +298,7 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
         value,
         selected,
         parts,
-        _internal: {div: makeDiv()},
+        _internal: {div: makeDiv(parts)},
         inserted: false,
         insert() {
           row.inserted = true;
@@ -348,6 +377,20 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
     }
   }
 
+  /* the decoder; the play paths of the audio view are stubbed, so the
+     prefetch and the metadata dialog are its only consumers; a test
+     replaces its methods to script what a decode or a stream header
+     reports */
+  const decoder = {
+    cancel() {},
+    decode() {
+      return Promise.reject(Error('NO_DECODE'));
+    },
+    open() {
+      return Promise.reject(Error('NO_OPEN'));
+    }
+  };
+
   const sandbox = {
     console: customConsole || console,
     URLSearchParams,
@@ -378,9 +421,11 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
         }
       }
     },
-    decoder: {cancel() {}},
+    decoder,
     remember,
-    htime: d => d
+    // the identity formatter of the page; it stringifies like the real one
+    // so that a cell holds a string as it would in the DOM
+    htime: d => String(d)
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(INDEX, 'utf8'), sandbox, {filename: INDEX});
@@ -435,6 +480,7 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
     remember,
     sentMessages,
     gates: {makeGate},
+    decoder,
 
     makeHandle,
     makeFile,

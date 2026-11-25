@@ -287,7 +287,7 @@ const unlockInteraction = async () => {
       div.style.opacity || div.style.pointerEvents || div.style.cursor) {
     throw Error('the unlocked row kept its locked interaction state');
   }
-  if (div.lastElementChild.textContent !== 'Local File') {
+  if (div.lastElementChild.previousElementSibling.textContent !== 'Local File') {
     throw Error('the unlocked row still asks for read permission');
   }
   world.checkMirrored();

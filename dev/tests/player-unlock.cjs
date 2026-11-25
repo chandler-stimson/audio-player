@@ -81,7 +81,7 @@ const batch = async () => {
   // both rows lost their locked interaction state
   for (const row of world.view.rows) {
     const div = row._internal.div;
-    if (div.lastElementChild.textContent !== 'Local File' ||
+    if (div.lastElementChild.previousElementSibling.textContent !== 'Local File' ||
         div.style.opacity || div.style.pointerEvents || div.style.cursor ||
         (div.listeners.click || []).length !== 0) {
       throw Error('the unlocked row kept its locked interaction state');

@@ -47,6 +47,12 @@ audio-view:focus-visible { /* stylelint-disable-line selector-type-no-unknown */
   box-sizing: border-box;
   padding-inline: 8px;
 }
+/* the lengths sit at the end of their rows; the digits keep a fixed width
+   so that the durations of the rows line up */
+#view::part(duration) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 
 /* the instruction that replaces an empty list; it never blocks the
    right-click menu or the drag-and-drop target of the playlist */
@@ -198,8 +204,22 @@ dialog button:focus-visible {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* the current track of the batch resolution and its bar; the native
+   progress element keeps its default styling */
+#resolve-track {
+  margin: 10px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#resolve-progress {
+  width: 100%;
+  margin: 10px 0 0;
+  accent-color: #4285f4;
+}
 #metadata-status,
-#grant-status {
+#grant-status,
+#resolve-status {
   margin: 10px 0 0;
   color: #70757a;
 }
