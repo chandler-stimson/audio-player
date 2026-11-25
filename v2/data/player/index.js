@@ -1456,10 +1456,13 @@ const restored = remember.restore().then(({files, index}) => {
 }).catch(e => console.warn('CANNOT_RESTORE_TRACKS', e));
 
 if (args.has('json')) {
+  /* the query is the fallback handoff of the worker; a corrupted or
+     hand-made value must not end the startup with an unhandled rejection,
+     it is reported and dropped instead */
   restored.then(() => {
     const jobs = JSON.parse(args.get('json'));
     add(jobs);
-  });
+  }).catch(e => console.warn('CANNOT_PARSE_LAUNCH_JOBS', e));
 }
 
 launchQueue.setConsumer(async launchParams => {

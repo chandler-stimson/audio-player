@@ -10,6 +10,8 @@
        exact interleavings that used to corrupt the playlist are scriptable
      - the drag callbacks, the message listener and the context-menu events
        of the page are captured, so every entry point of add() is drivable
+     - the query of the page (location.search) and its console are settable
+       through the options of makePlayerWorld ({search, console})
 
    The decoder, the metadata dialog and the audio graph stay inert: play()
        records the track it was asked to start instead of decoding it. */
@@ -113,7 +115,7 @@ const makeElement = (id = '') => {
 
 /* --------------------------------------------------------------- the page world */
 
-const makePlayerWorld = () => {
+const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
   /* the deferred that remember.restore() resolves with; the test decides
      when the remembered tracks come back and which ones they are */
   let restoreValue;
@@ -342,13 +344,13 @@ const makePlayerWorld = () => {
   }
 
   const sandbox = {
-    console,
+    console: customConsole || console,
     URLSearchParams,
     setTimeout,
     clearTimeout,
     queueMicrotask,
     document,
-    location: {search: ''},
+    location: {search},
     localStorage: {
       getItem: () => null,
       setItem() {}
