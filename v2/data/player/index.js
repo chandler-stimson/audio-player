@@ -1345,7 +1345,7 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
       response(true);
       chrome.runtime.sendMessage({
         method: 'bring-to-front'
-      });
+      }, () => chrome.runtime.lastError);
     });
     // the elected copy answers asynchronously
     return true;
@@ -1355,7 +1355,7 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
       response('pong');
       chrome.runtime.sendMessage({
         method: 'bring-to-front'
-      });
+      }, () => chrome.runtime.lastError);
     });
     return true;
   }

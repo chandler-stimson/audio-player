@@ -22,10 +22,16 @@ const click = (extra = '') => {
     }
   });
 };
-chrome.action.onClicked.addListener(click);
+/* the click event passes its Tab object as the first argument; the object
+   must not leak into `extra` and end up as the ?[object Object] query of
+   the player URL */
+chrome.action.onClicked.addListener(() => click());
 
-chrome.runtime.onMessage.addListener((request, sender) => {
+chrome.runtime.onMessage.addListener((request, sender, response) => {
   if (request.method === 'bring-to-front') {
+    // the answer keeps the promise of the fire-and-forget sender from
+    // rejecting; the focus updates below still run on their own
+    response(true);
     const tab = sender.tab;
     chrome.tabs.update(tab.id, {
       selected: true
