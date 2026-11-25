@@ -183,6 +183,11 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
         }
       },
       lastError: null
+    },
+    // the window that hosts the player; the page reports its ID with every
+    // message to the worker
+    windows: {
+      getCurrent: () => Promise.resolve({id: 1})
     }
   };
 
@@ -308,6 +313,10 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
   const document = {
     title: '',
     activeElement: null,
+    // the player asks this before the prompt of the browser; a test that
+    // drives the hidden player (the media keys, the automatic advancement)
+    // overrides it with a false return
+    hasFocus: () => true,
     getElementById(id) {
       if (elements.has(id) === false) {
         const el = id === 'audio' ? audio : (id === 'view' ? view : makeElement(id));
@@ -386,6 +395,9 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
        releases it (FIFO; the parked call still resolves truthfully)
      - permission: the promise that requestPermission resolves with, so an
        unlock can be held open on demand
+     - query: the state that queryPermission resolves with; a handle
+       without this option has no queryPermission and is skipped by the
+       batch unlock of the page
      - real: the file that getFile returns (the readable copy) */
   const makeHandle = (id, opts = {}) => {
     const real = opts.real || {
@@ -402,6 +414,10 @@ const makePlayerWorld = ({search = '', console: customConsole} = {}) => {
         return opts.gate ? opts.gate.wait(same) : Promise.resolve(same);
       },
       requestPermission: () => opts.permission || Promise.resolve('granted'),
+      // the read-permission query of the batch unlock; a handle without a
+      // query option carries no queryPermission and the sweep skips it
+      queryPermission: opts.query === undefined ?
+        undefined : () => Promise.resolve(opts.query),
       getFile: async () => ({...real})
     };
   };

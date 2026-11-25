@@ -138,8 +138,8 @@ const run = async () => {
     'open-player-current',
     'open-player-extended',
     'remember-10',
-    'remember-20',
     'remember-30',
+    'remember-60',
     'remember-none',
     'skip-period'
   ];
@@ -158,9 +158,9 @@ const run = async () => {
   must(world.element('extended-height').value === 600, 'the default extended height is not 600');
   must(world.element('open-player-current').checked === true, 'the compact mode is not the default');
   must(world.element('open-player-extended').checked === false, 'the extended mode is on by default');
-  must(world.element('remember-10').checked === true, 'ten remembered tracks is not the default');
-  must(world.element('remember-20').checked === false, 'twenty remembered tracks is on by default');
-  must(world.element('remember-30').checked === false, 'thirty remembered tracks is on by default');
+  must(world.element('remember-10').checked === false, 'ten remembered tracks is on by default');
+  must(world.element('remember-30').checked === true, 'thirty remembered tracks is not the default');
+  must(world.element('remember-60').checked === false, 'sixty remembered tracks is on by default');
   must(world.element('remember-none').checked === false, 'no remembered tracks is on by default');
   must(world.element('skip-period').value === '10', 'ten-second skips is not the default');
 
@@ -168,8 +168,8 @@ const run = async () => {
   world.element('extended-height').value = '650';
   world.element('open-player-current').checked = false;
   world.element('open-player-extended').checked = true;
-  world.element('remember-10').checked = false;
-  world.element('remember-20').checked = true;
+  world.element('remember-30').checked = false;
+  world.element('remember-60').checked = true;
   world.element('skip-period').value = '30';
   world.status.textContent = 'Preferences saved.';
   world.form.dispatch('input');
@@ -180,7 +180,7 @@ const run = async () => {
   must(world.store.get('height') === 240, 'the height preference was not saved');
   must(world.store.get('extended-height') === 650, 'the extended height preference was not saved');
   must(world.store.get('extended-view') === true, 'the player mode was not saved');
-  must(world.store.get('remember-tracks') === 20, 'the remember count was not saved');
+  must(world.store.get('remember-tracks') === 60, 'the remember count was not saved');
   must(world.store.get('skip-period') === 30, 'the numeric skip was not saved as a number');
   must(world.status.textContent === 'Preferences saved.', 'the options page did not report the save');
 

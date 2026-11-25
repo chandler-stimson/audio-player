@@ -52,25 +52,79 @@ chrome.action.onClicked.addListener(() => click());
 
 chrome.runtime.onMessage.addListener((request, sender, response) => {
   if (request.method === 'bring-to-front') {
-    // the answer keeps the promise of the fire-and-forget sender from
-    // rejecting; the focus updates below still run on their own
-    response(true);
     /* the player page passes the ID of its own window because extension
        pages do not report a sender.tab; a player hosted in a tab falls
        back to the window of that tab */
     const tab = sender.tab;
     const windowId = request.windowId !== undefined ?
       request.windowId : tab && tab.windowId;
-    if (windowId !== undefined) {
+    if (windowId === undefined) {
+      response(true);
+      return;
+    }
+
+    /* raising a hidden player takes more than one update: a minimized
+       window is restored first (focusing alone does not raise it
+       everywhere), the window is focused afterwards and the tab of a
+       tab-hosted player is activated last; a final check highlights the
+       window when the window manager refused the focus */
+    (async() => {
+      let win;
+      try {
+        win = await chrome.windows.get(windowId);
+      }
+      catch (e) {
+        response(true); // the window is gone; there is nothing to raise
+        return;
+      }
+
+      // a focused window is already in the front
+      if (win.focused && win.state !== 'minimized') {
+        response(true);
+        return;
+      }
+
+      if (win.state === 'minimized') {
+        try {
+          win = await chrome.windows.update(windowId, {
+            state: 'normal'
+          });
+        }
+        catch (e) {
+          response(true); // the restore failed; the window is unusable
+          return;
+        }
+      }
+
+      try {
+        win = await chrome.windows.update(windowId, {
+          focused: true
+        });
+      }
+      catch (e) {
+        // the attention check below still runs on the stale state
+      }
+
       if (tab && tab.id !== undefined) {
         chrome.tabs.update(tab.id, {
           selected: true
-        });
+        }, () => chrome.runtime.lastError);
       }
-      chrome.windows.update(windowId, {
-        focused: true
-      });
-    }
+
+      // the window managers of some platforms refuse to take the focus
+      // away from the window of the user; the highlight asks for the
+      // attention of the user without stealing the focus
+      if (win && win.focused === false) {
+        chrome.windows.update(windowId, {
+          drawAttention: true
+        }, () => chrome.runtime.lastError);
+      }
+
+      response(true);
+    })();
+
+    // the answer is sent after the asynchronous window updates
+    return true;
   }
   else if (request.method === 'expand') {
     // the compact player asks for the height of the extended view

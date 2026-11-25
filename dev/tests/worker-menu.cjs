@@ -162,7 +162,7 @@ const run = async () => {
 
   /* the two radio groups live in their own submenus, so the separator of the
      flat layout is gone */
-  const rememberIds = ['remember-10', 'remember-20', 'remember-30', 'remember-none'];
+  const rememberIds = ['remember-10', 'remember-30', 'remember-60', 'remember-none'];
   for (const id of rememberIds) {
     must(byId[id].parentId === 'settings-remember', id + ' is not in the remember submenu');
   }
@@ -176,9 +176,9 @@ const run = async () => {
      object of the action click must not leak into the player URL */
   world.actionClicks[0]({id: 1});
   must(world.created.length === 1, 'the default action click did not open a player');
-  must(world.created[0].width === 500, 'the default player width changed');
+  must(world.created[0].width === 600, 'the default player width changed');
   must(world.created[0].height === 120, 'the compact mode does not use its default height');
-  must(world.created[0].left === 350, 'the default player left is wrong');
+  must(world.created[0].left === 300, 'the default player left is wrong');
   must(world.created[0].top === 390, 'the default player top is wrong');
   must(world.created[0].url === 'data/player/index.html', 'the action click polluted the player URL');
 
@@ -194,28 +194,29 @@ const run = async () => {
   must(world.created[1].top === 150, 'the extended player is not centered vertically');
   must(world.created[1].url === 'data/player/index.html', 'the extended player URL is wrong');
 
-  /* both heights are preferences; the saved values override the defaults */
+  /* both heights are preferences; the saved values override the defaults.
+     the left position is not a preference anymore: the window is centered
+     inside the current browser window (100 + (1000 - 600) / 2) */
   world.menuClicks[0]({menuItemId: 'open-player-current'}, {});
   must(world.store.get('extended-view') === false, 'the compact mode was not stored');
   for (const [key, value] of Object.entries({
     width: 600,
     height: 240,
-    'extended-height': 650,
-    left: 5
+    'extended-height': 650
   })) {
     world.store.set(key, value);
   }
   world.actionClicks[0]();
   must(world.created[2].width === 600, 'the compact mode ignored the saved width');
   must(world.created[2].height === 240, 'the compact mode ignored the saved height');
-  must(world.created[2].left === 5, 'the compact mode ignored the saved left');
+  must(world.created[2].left === 300, 'the compact mode is not centered horizontally');
   must(world.created[2].top === 330, 'the current player is not centered vertically');
 
   world.menuClicks[0]({menuItemId: 'open-player-extended'}, {});
   world.actionClicks[0]();
   must(world.created[3].width === 600, 'the extended mode dropped the saved width');
   must(world.created[3].height === 650, 'the extended mode ignored its preference');
-  must(world.created[3].left === 5, 'the extended mode dropped the saved left');
+  must(world.created[3].left === 300, 'the extended mode is not centered horizontally');
   must(world.created[3].top === 125, 'the extended player is not centered vertically');
 
   /* a damaged or old preference cannot make the extended view shorter than

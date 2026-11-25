@@ -71,6 +71,22 @@ chrome.storage.onChanged.addListener((prefs, area) => {
    that a player hosted in a tab reports the tab's current window */
 const hostWindow = () => chrome.windows.getCurrent().then(w => w.id);
 
+/* raise the window of this player; the promise settles once the worker
+   reports the window visible and focused (a minimized window is restored
+   first, because focusing alone does not raise it everywhere), or right
+   away when the worker cannot be reached; the read-access dialog waits
+   for it so that neither the dialog nor the prompt of the browser is
+   raised behind another window */
+const front = () => hostWindow().then(windowId => new Promise(resolve => {
+  chrome.runtime.sendMessage({
+    method: 'bring-to-front',
+    windowId
+  }, () => {
+    chrome.runtime.lastError;
+    resolve();
+  });
+})).catch(() => {});
+
 /* the inline shortcut of the compact view; the browser owns the window, so
    the worker is the one that changes its height */
 document.getElementById('expand').addEventListener('click', async () => {
@@ -305,24 +321,61 @@ const serialize = job => {
   return mutating;
 };
 
+/* a locked playlist row is replaced by its readable file; the replacement
+   owns the row from here on, so it inherits the row cleanup and is
+   normalized before any later mutation can delete it; false when the row
+   was removed in the meantime */
+const swapIn = (locked, real) => {
+  const i = audio.files ? audio.files.indexOf(locked) : -1;
+  if (i === -1) {
+    return false;
+  }
+
+  const cleanup = locked.cleanup;
+  audio.files[i] = real;
+
+  if (cleanup) {
+    real.cleanup = cleanup;
+    cleanup();
+  }
+  return true;
+};
+
 /* a remembered local track is listed before its read permission is granted;
    ask for the permission and replace the locked entry with the readable
-   file; the row is found again by its entry because the playlist can change
-   while the permission prompt is open; the readable replacement is returned
-   so that the callers can resume it by identity and not by its place, and
-   null when the row was removed in the meantime */
-const unlock = async file => {
+   file; `allowPrompt` is false while the player runs hidden (the media keys
+   and the automatic advancement reach a background or minimized window):
+   the prompt of the browser would open behind it, so only the state is
+   checked there and the grant dialog does the asking once the player is
+   visible; the row is found again by its entry because the playlist can
+   change while the permission prompt is open; the readable replacement is
+   returned so that the callers can resume it by identity and not by its
+   place, and null when the row was removed in the meantime */
+const unlock = async(file, allowPrompt = true) => {
   let state;
-  try {
-    state = await file.handle.requestPermission({mode: 'read'});
+  if (allowPrompt) {
+    try {
+      state = await file.handle.requestPermission({mode: 'read'});
+    }
+    catch (e) {
+      // the permission prompt requires a user action; the automatic
+      // advancement and the synthetic key events cannot provide one
+      throw Error('Cannot ask for the read permission of "' + file.name + '" without a user action.');
+    }
+    if (state !== 'granted') {
+      throw Error('The read permission for "' + file.name + '" was denied.');
+    }
   }
-  catch (e) {
-    // the permission prompt requires a user action; the automatic
-    // advancement and the synthetic key events cannot provide one
-    throw Error('Cannot ask for the read permission of "' + file.name + '" without a user action.');
-  }
-  if (state !== 'granted') {
-    throw Error('The read permission for "' + file.name + '" was denied.');
+  else {
+    try {
+      state = await file.handle.queryPermission({mode: 'read'});
+    }
+    catch (e) {
+      throw Error('Cannot check the read permission of "' + file.name + '" while the player is in the background.');
+    }
+    if (state !== 'granted') {
+      throw Error('The read permission of "' + file.name + '" was not asked for while the player was in the background.');
+    }
   }
 
   const real = await file.handle.getFile();
@@ -330,21 +383,34 @@ const unlock = async file => {
 
   // the replacement is a playlist mutation as well, so it goes through the
   // queue; a row that was removed in the meantime is not written back
-  return serialize(() => {
-    const i = audio.files ? audio.files.indexOf(file) : -1;
-    if (i === -1) {
-      return null;
-    }
-    const cleanup = file.cleanup;
-    audio.files[i] = real;
+  return serialize(async () => {
+    const own = swapIn(file, real);
 
-    // the replacement owns the row from here on, so it inherits the row
-    // cleanup and is normalized before any later mutation can delete it
-    if (cleanup) {
-      real.cleanup = cleanup;
-      cleanup();
+    /* one granted ask restores the whole playlist: the prompt of the browser
+       covers every file this extension was granted before, so the handles
+       that report their read permission as granted now are replaced without
+       an ask of their own; the rest stay locked and ask on their first
+       attempt to play */
+    for (const locked of (audio.files || []).slice()) {
+      if (locked === file || locked.locked !== true ||
+          !locked.handle || locked.handle.queryPermission === undefined) {
+        continue;
+      }
+      try {
+        if (await locked.handle.queryPermission({mode: 'read'}) !== 'granted') {
+          continue;
+        }
+        const readable = await locked.handle.getFile();
+        readable.handle = locked.handle;
+        swapIn(locked, readable);
+      }
+      catch (e) {
+        // a handle that cannot be read anymore (a moved or deleted file)
+        // stays locked and reports on its own attempt to play
+      }
     }
-    return real;
+
+    return own ? real : null;
   });
 };
 
@@ -355,16 +421,22 @@ const grantJob = {
   file: null
 };
 
-const askAccess = (file, e) => {
+const askAccess = async(file, e) => {
   grantJob.file = file;
 
   const grant = document.getElementById('grant');
   document.getElementById('grant-body').textContent =
     'The local track "' + file.name + '" needs its read access back. The browser clears the ' +
-    'remembered permission of a local file after each restart.';
+    'remembered permission of a local file after each restart. One grant here restores the ' +
+    'read access of every remembered track the browser still knows.';
   const status = document.getElementById('grant-status');
   status.textContent = e.message || e;
   status.hidden = false;
+
+  // the automatic advancement and the media keys also reach a background
+  // or minimized window where neither this dialog nor the prompt of the
+  // browser can be seen; the player raises its own window first
+  await front();
 
   // the player is already silent (the selection retired the old track
   // before the permission was asked for); an open dialog of another locked
@@ -411,9 +483,11 @@ const play = () => {
   remember.current(file);
 
   // a remembered local track needs its read permission before it can be
-  // decoded; selecting the track provides the gesture for the prompt
+  // decoded; a visible player asks with the prompt of the browser and a
+  // hidden one checks the state and reports on the grant dialog instead
+  // (the prompt of the browser would open behind the hidden window)
   if (file.locked) {
-    unlock(file).then(real => {
+    unlock(file, document.hasFocus()).then(real => {
       // the row was removed while the permission was being asked for
       if (!real) {
         return;
@@ -424,7 +498,8 @@ const play = () => {
       if (audio.file === real) {
         play();
       }
-    }).catch(e => askAccess(file, e));
+    }).catch(e => askAccess(file, e).catch(e =>
+      console.warn('CANNOT_ASK_ACCESS', e)));
     return;
   }
 
