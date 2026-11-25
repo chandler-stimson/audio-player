@@ -17,6 +17,11 @@
        waits for the restored rows (it plays as the newly added one)
      - unlock: a locked track whose permission is granted after its row
        was replaced does not write its readable copy over the new row
+     - retry identity: a deletion under the parked unlock shifts the rows,
+       and the retry must resume its readable replacement by identity and
+       not restart the track that slid into its old place (driven once
+       through the automatic retry and once through the Grant Access
+       dialog)
      - unlocked row: the readable replacement inherits the row cleanup and
        keeps selection/navigation synchronized when it is deleted
      - menu: the context menu remembers its row by its entry, so a
@@ -315,6 +320,151 @@ const unlockInteraction = async () => {
   console.log('unlocked row ok: the replacement behaves and deletes like a normal row');
 };
 
+/* the retry of an unlock must follow its readable replacement by identity,
+   not by its place: a deletion under the parked retry shifts the rows and
+   the old place then holds another track, which the old code restarted */
+const retryIdentity = async () => {
+  const world = makePlayerWorld();
+  const permission = world.gates.makeGate();
+  const compare = world.gates.makeGate();
+
+  // a locked track whose permission ask parks on the gate; the readable
+  // copy keeps the name of its row
+  const real = {name: 'locked.mp3', size: 100, lastModified: 1, type: 'audio/x-test'};
+  const handle = {
+    id: 7,
+    // every entry comparison parks: the dedupe scan of the incoming
+    // addition holds the mutation queue until the test releases it
+    isSameEntry: () => compare.wait(false),
+    requestPermission: () => permission.wait('granted'),
+    getFile: async () => ({...real})
+  };
+  const L = world.makeFile('locked.mp3', handle, {locked: true});
+  const A = {name: 'a.mp3', href: 'https://x/a.mp3'};
+  world.finishRestore([A, L], 1);
+  await settleAll();
+
+  // the locked row starts the permission flow; the retry parks on the gate
+  world.view.rows[1]._internal.div.dispatch('click');
+  await settle();
+  if (world.remember.currents[world.remember.currents.length - 1] !== L) {
+    throw Error('the locked track did not start the permission flow');
+  }
+
+  // another track arrives; its scan parks on the comparison with the locked
+  // entry and holds the queue, so the replacement of the unlock waits too
+  const C = world.makeFile('c.mp3', world.makeHandle(9));
+  world.add([C]);
+  await settle();
+
+  // the permission comes back; the replacement queues behind the parked
+  // addition and the row identity of the retry is recorded before both
+  permission.release();
+  await settle();
+
+  // the row of A is deleted while everything waits
+  world.openMenuAt(10); // the row of A
+  world.clickMenu('delete-this');
+  await settle();
+
+  // the addition resumes: C plays as the newly added one, then the
+  // replacement runs and the deletion shifts the rows under the retry
+  compare.release();
+  await settleAll();
+
+  const files = world.audio.files;
+  if (files.length !== 2 || files[0].handle !== handle || files[0].locked || files[1] !== C) {
+    throw Error('the playlist is [' + names(files) +
+      '] instead of the readable replacement and c.mp3');
+  }
+  if (world.audio.i !== 1) {
+    throw Error('the current track did not stay on c.mp3');
+  }
+  /* the deletion moved C into the old place of the unlocked row; the retry
+     of the old code restarted C here because the place still matched */
+  if (world.audio.started.length !== 1 || world.audio.started[0] !== C) {
+    throw Error('the stale retry restarted the playing track (' +
+      world.audio.started.length + ' start(s))');
+  }
+  world.checkMirrored();
+  console.log('retry ok: the unlock retry follows its replacement, not its place');
+};
+
+/* the same schedule through the Grant Access dialog: the retry of the
+   Grant button must also resume its replacement by identity */
+const grantRetryIdentity = async () => {
+  const world = makePlayerWorld();
+  const permission = world.gates.makeGate();
+  const compare = world.gates.makeGate();
+
+  // the first ask is denied (the dialog opens), the second one is granted
+  let granted = false;
+  const real = {name: 'locked.mp3', size: 100, lastModified: 1, type: 'audio/x-test'};
+  const handle = {
+    id: 7,
+    isSameEntry: () => compare.wait(false),
+    requestPermission: () => permission.wait(granted ? 'granted' : 'denied'),
+    getFile: async () => ({...real})
+  };
+  const L = world.makeFile('locked.mp3', handle, {locked: true});
+  const A = {name: 'a.mp3', href: 'https://x/a.mp3'};
+  world.finishRestore([A, L], 1);
+  await settleAll();
+
+  // the locked row asks for the permission; the ask is denied and the
+  // Grant Access dialog opens
+  world.view.rows[1]._internal.div.dispatch('click');
+  await settle();
+  permission.release();
+  await settle();
+
+  const grant = world.document.getElementById('grant');
+  if (grant.open !== true) {
+    throw Error('the Grant Access dialog did not open on the denied ask');
+  }
+
+  // the dialog stays open while another track arrives (a broadcast of the
+  // worker can always do this); its scan parks and holds the queue
+  const C = world.makeFile('c.mp3', world.makeHandle(9));
+  world.add([C]);
+  await settle();
+
+  // the user grants the access; the second ask parks on the gate
+  granted = true;
+  world.document.getElementById('grant-ok').dispatch('click');
+  await settle();
+
+  // the permission is granted now; the replacement queues behind the
+  // parked addition
+  permission.release();
+  await settle();
+
+  // the row of A is deleted while everything waits
+  world.openMenuAt(10); // the row of A
+  world.clickMenu('delete-this');
+  await settle();
+
+  // the addition resumes: C plays, then the replacement runs and the
+  // deletion shifts the rows under the retry of the Grant button
+  compare.release();
+  await settleAll();
+
+  const files = world.audio.files;
+  if (files.length !== 2 || files[0].handle !== handle || files[0].locked || files[1] !== C) {
+    throw Error('the playlist is [' + names(files) +
+      '] instead of the readable replacement and c.mp3');
+  }
+  if (grant.open !== false) {
+    throw Error('the Grant Access dialog did not close after the grant');
+  }
+  if (world.audio.started.length !== 1 || world.audio.started[0] !== C) {
+    throw Error('the stale retry of the Grant button restarted the playing track (' +
+      world.audio.started.length + ' start(s))');
+  }
+  world.checkMirrored();
+  console.log('grant retry ok: the Grant button resumes its replacement, not its place');
+};
+
 /* the context menu remembers its row by its entry, so a deletion after the
    playlist changed removes the right row (or nothing when it is gone) */
 const menuRow = async () => {
@@ -366,6 +516,8 @@ const run = async () => {
   await jobsAfterRestore();
   await unlockSkip();
   await unlockInteraction();
+  await retryIdentity();
+  await grantRetryIdentity();
   await menuRow();
 
   console.log('PLAYER-ADD TEST PASSED');

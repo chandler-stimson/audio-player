@@ -301,8 +301,9 @@ const serialize = job => {
 /* a remembered local track is listed before its read permission is granted;
    ask for the permission and replace the locked entry with the readable
    file; the row is found again by its entry because the playlist can change
-   while the permission prompt is open; -1 is returned when the row was
-   removed in the meantime */
+   while the permission prompt is open; the readable replacement is returned
+   so that the callers can resume it by identity and not by its place, and
+   null when the row was removed in the meantime */
 const unlock = async file => {
   let state;
   try {
@@ -324,18 +325,19 @@ const unlock = async file => {
   // queue; a row that was removed in the meantime is not written back
   return serialize(() => {
     const i = audio.files ? audio.files.indexOf(file) : -1;
-    if (i !== -1) {
-      const cleanup = file.cleanup;
-      audio.files[i] = real;
-
-      // the replacement owns the row from here on, so it inherits the row
-      // cleanup and is normalized before any later mutation can delete it
-      if (cleanup) {
-        real.cleanup = cleanup;
-        cleanup();
-      }
+    if (i === -1) {
+      return null;
     }
-    return i;
+    const cleanup = file.cleanup;
+    audio.files[i] = real;
+
+    // the replacement owns the row from here on, so it inherits the row
+    // cleanup and is normalized before any later mutation can delete it
+    if (cleanup) {
+      real.cleanup = cleanup;
+      cleanup();
+    }
+    return real;
   });
 };
 
@@ -404,13 +406,15 @@ const play = () => {
   // a remembered local track needs its read permission before it can be
   // decoded; selecting the track provides the gesture for the prompt
   if (file.locked) {
-    unlock(file).then(j => {
+    unlock(file).then(real => {
       // the row was removed while the permission was being asked for
-      if (j === -1) {
+      if (!real) {
         return;
       }
-      // the track was not switched while the permission was being asked for
-      if ((audio.i || 0) === j) {
+      // only the readable replacement itself is resumed; its place in the
+      // playlist is not enough because a re-added copy or another track can
+      // own the player while the permission is being asked for
+      if (audio.file === real) {
         play();
       }
     }).catch(e => askAccess(file, e));
@@ -545,14 +549,16 @@ document.getElementById('skip-forward').addEventListener('click', () => {
   document.getElementById('grant-ok').addEventListener('click', () => {
     const {file} = grantJob;
     // this click is the user action that the prompt needs
-    unlock(file).then(i => {
+    unlock(file).then(real => {
       grant.close();
       // the row was removed while the permission was being asked for
-      if (i === -1) {
+      if (!real) {
         return;
       }
-      // the track was not switched while the permission was being asked for
-      if ((audio.i || 0) === i) {
+      // only the readable replacement itself is resumed; its place in the
+      // playlist is not enough because a re-added copy or another track can
+      // own the player while the dialog stays open
+      if (audio.file === real) {
         play();
       }
     }).catch(e => {
@@ -948,12 +954,12 @@ audio.focus();
     // a locked local track needs its read permission before it can be decoded
     if (file.locked) {
       try {
-        const i = await unlock(file);
+        const real = await unlock(file);
         // the row was removed while the permission was being asked for
-        if (i === -1) {
+        if (!real) {
           return;
         }
-        target = audio.files[i];
+        target = real;
       }
       catch (e) {
         metaJob.file = file;
