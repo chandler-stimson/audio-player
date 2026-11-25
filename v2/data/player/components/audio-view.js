@@ -193,16 +193,24 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     this.addEventListener('ended', () => progress.seek(100));
 
     this.addEventListener('keydown', e => {
-      // the keys act on the host itself; a key on a focused child control
-      // stays that control's own activation
+      // Space plays and pauses from any control of the player; the repeat
+      // of a held key must not flip the state and the activation that a
+      // focused button runs on the release is kept out of the way
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (e.repeat) {
+          return;
+        }
+        this.toggle();
+        return;
+      }
+      // the other keys act on the host itself; a key on a focused child
+      // control stays that control's own activation
       if (e.composedPath()[0] !== this) {
         return;
       }
       if (e.code === 'KeyB' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         this.currentTime = 0;
-      }
-      else if (e.code === 'Space') {
-        this.toggle();
       }
       else if (e.code === 'ArrowRight') {
         const shift = this.skipSeconds * ((e.metaKey || e.ctrlKey) ? 3 : 1);
@@ -226,6 +234,15 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       }
       else if (e.code === 'KeyM') {
         this.shadowRoot.getElementById('volume').toggleMute();
+      }
+    });
+    // a native button runs its activation on the release of a Space press
+    // (the click fires from the keyup); the toggle already ran on the
+    // keydown, so the release is silenced to keep the button from firing
+    // once more
+    this.addEventListener('keyup', e => {
+      if (e.code === 'Space') {
+        e.preventDefault();
       }
     });
 
