@@ -22,6 +22,10 @@ following changes:
     (the original passed AV_TIME_BASE units to a stream-indexed seek and
     landed far off in most containers) and bails out of persistent demuxer
     read errors instead of spinning
+  * the build enables libswresample: with --disable-all, configure drops
+    every decoder whose dependencies are unmet, and the native Opus decoder
+    depends on swresample (such files then failed at open with "the codec
+    is not supported" while the container itself demuxed fine)
   * a use-after-free in the batch clean-up path was fixed
 
 The batch entry point `decoder` keeps its 0.1.2 contract, so the binaries can
@@ -64,6 +68,8 @@ windowed playback scheduler of the audio view:
   node dev/tests/wasm-smoke.cjs
   node dev/tests/worker-stream.cjs
   node dev/tests/worker-mp4.cjs            (downloads the Sintel trailer once)
+  node dev/tests/worker-opus.cjs           (downloads a small WebM once; guards
+                                            the codec set: Opus in Matroska)
   node dev/tests/wrapper.cjs
   node dev/tests/audio-view-scheduler.cjs
   node dev/tests/audio-view-integration.cjs (as above; needs the sample)

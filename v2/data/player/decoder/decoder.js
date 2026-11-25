@@ -898,25 +898,25 @@ function dbg(...args) {
 // === Body ===
 
 var ASM_CONSTS = {
-  2590816: ($0, $1) => { Module.meta['Exit Message'] = UTF8ToString($1); Module.meta['Exit Code'] = $0; },  
- 2590899: ($0) => { Module.meta['Codec ID'] = $0; },  
- 2590933: ($0) => { Module.meta['Codec Name'] = UTF8ToString($0); },  
- 2590983: ($0) => { Module.meta['Codec Long Name'] = UTF8ToString($0); },  
- 2591038: ($0) => { Module.meta['Stream Index'] = $0; },  
- 2591076: ($0) => { Module.meta['Sample Format'] = UTF8ToString($0); },  
- 2591129: ($0) => { Module.meta['Sample Rate'] = $0; },  
- 2591166: ($0) => { Module.meta['Sample Size'] = $0; },  
- 2591203: ($0) => { Module.meta['Channels'] = $0; },  
- 2591237: ($0, $1, $2) => { Module.meta = {}; Module.meta['LIBAVCODEC Version'] = $0 + '.' + $1 + '.' + $2; },  
- 2591321: ($0, $1, $2) => { Module.meta['LIBAVFORMAT Version'] = $0 + '.' + $1 + '.' + $2; },  
- 2591388: ($0) => { Module.meta['Duration'] = $0; },  
- 2591422: ($0) => { Module.meta['Start Time'] = $0; },  
- 2591458: () => { return Module.inputReady(); },  
- 2591490: ($0, $1, $2) => { Module.meta = {}; Module.meta['LIBAVCODEC Version'] = $0 + '.' + $1 + '.' + $2; },  
- 2591574: ($0, $1, $2) => { Module.meta['LIBAVFORMAT Version'] = $0 + '.' + $1 + '.' + $2; },  
- 2591641: ($0, $1) => { return Module.readInput($0, $1); },  
- 2591678: ($0, $1) => { return Module.seekInput($0, $1); },  
- 2591715: ($0, $1, $2, $3) => { Module.onpcm($0, $1, $2, $3); }
+  2619008: ($0, $1) => { Module.meta['Exit Message'] = UTF8ToString($1); Module.meta['Exit Code'] = $0; },  
+ 2619091: ($0) => { Module.meta['Codec ID'] = $0; },  
+ 2619125: ($0) => { Module.meta['Codec Name'] = UTF8ToString($0); },  
+ 2619175: ($0) => { Module.meta['Codec Long Name'] = UTF8ToString($0); },  
+ 2619230: ($0) => { Module.meta['Stream Index'] = $0; },  
+ 2619268: ($0) => { Module.meta['Sample Format'] = UTF8ToString($0); },  
+ 2619321: ($0) => { Module.meta['Sample Rate'] = $0; },  
+ 2619358: ($0) => { Module.meta['Sample Size'] = $0; },  
+ 2619395: ($0) => { Module.meta['Channels'] = $0; },  
+ 2619429: ($0, $1, $2) => { Module.meta = {}; Module.meta['LIBAVCODEC Version'] = $0 + '.' + $1 + '.' + $2; },  
+ 2619513: ($0, $1, $2) => { Module.meta['LIBAVFORMAT Version'] = $0 + '.' + $1 + '.' + $2; },  
+ 2619580: ($0) => { Module.meta['Duration'] = $0; },  
+ 2619614: ($0) => { Module.meta['Start Time'] = $0; },  
+ 2619650: () => { return Module.inputReady(); },  
+ 2619682: ($0, $1, $2) => { Module.meta = {}; Module.meta['LIBAVCODEC Version'] = $0 + '.' + $1 + '.' + $2; },  
+ 2619766: ($0, $1, $2) => { Module.meta['LIBAVFORMAT Version'] = $0 + '.' + $1 + '.' + $2; },  
+ 2619833: ($0, $1) => { return Module.readInput($0, $1); },  
+ 2619870: ($0, $1) => { return Module.seekInput($0, $1); },  
+ 2619907: ($0, $1, $2, $3) => { Module.onpcm($0, $1, $2, $3); }
 };
 
 // end include: preamble.js
@@ -5200,7 +5200,10 @@ var dynCall_jiiij = Module['dynCall_jiiij'] = createExportWrapper('dynCall_jiiij
 var dynCall_iiiiij = Module['dynCall_iiiiij'] = createExportWrapper('dynCall_iiiiij', 7);
 var dynCall_iiiiiij = Module['dynCall_iiiiiij'] = createExportWrapper('dynCall_iiiiiij', 8);
 var dynCall_ijiii = Module['dynCall_ijiii'] = createExportWrapper('dynCall_ijiii', 6);
-var _ff_h264_cabac_tables = Module['_ff_h264_cabac_tables'] = 844828;
+var dynCall_viiijj = Module['dynCall_viiijj'] = createExportWrapper('dynCall_viiijj', 8);
+var dynCall_jij = Module['dynCall_jij'] = createExportWrapper('dynCall_jij', 4);
+var dynCall_jii = Module['dynCall_jii'] = createExportWrapper('dynCall_jii', 3);
+var _ff_h264_cabac_tables = Module['_ff_h264_cabac_tables'] = 850652;
 
 // include: postamble.js
 // === Auto-generated postamble setup entry stuff ===

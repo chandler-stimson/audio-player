@@ -48,6 +48,9 @@ jobs:
             require('./dev/decoder/decoder.js');
           "
 
+      - name: Opus in Matroska regression
+        run: node dev/tests/worker-opus.cjs
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

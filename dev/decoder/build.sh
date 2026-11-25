@@ -6,6 +6,12 @@
 #   * -O3 instead of -Oz (decode speed over bundle size)
 #   * -msimd128 (clang auto-vectorizes the PCM conversion loops)
 #   * exports the incremental streaming API next to the batch entry point
+#   * enables libswresample (with --disable-all the decoders whose
+#     dependencies are unmet are silently dropped from the binary; the
+#     native Opus decoder depends on swresample and such files then fail
+#     at open with "the codec is not supported")
+#   * archives with emar (a musl host has no binutils `ar`; emranlib was
+#     already the ranlib of the build)
 #   * pins the FFmpeg version (the source uses the pre-ch_layout API, which
 #     the releases from n7.0 on no longer have)
 #   * falls back to a binaryen-free link when the wasm-opt of the emsdk
@@ -54,6 +60,20 @@ if ldd --version 2>&1 | head -1 | grep -qi musl; then
   fi
 fi
 
+# libswresample has to be enabled beside avcodec/avformat: configure only
+# includes the decoders whose dependencies are met, and the native Opus
+# decoder depends on swresample (without it such files fail at open with
+# "the codec is not supported" although every other demuxer works)
+CONFIG_REVISION=3
+REVISION_FILE="$BUILD/FFmpeg/.config-revision"
+if [ -f "$REVISION_FILE" ] && [ "$(cat "$REVISION_FILE" 2> /dev/null)" = "$CONFIG_REVISION" ]; then
+  echo "build.sh: reusing the configured tree of revision $CONFIG_REVISION"
+else
+  # the flags changed (or the tree was never configured here): a stale
+  # config.mak would keep the old decoder set, so start from a clean clone
+  rm -rf "$BUILD/FFmpeg"
+fi
+
 # pin the FFmpeg version
 if [ ! -d "$BUILD/FFmpeg" ]; then
   git clone --depth 1 --branch n4.0.2 https://github.com/FFmpeg/FFmpeg "$BUILD/FFmpeg"
@@ -61,13 +81,14 @@ fi
 
 pushd "$BUILD/FFmpeg" > /dev/null
 
-if [ ! -f config.mak ]; then
+if [ ! -f ffbuild/config.mak ]; then
   emconfigure ./configure \
     --cc=emcc \
     --cxx=em++ \
     --objcc=emcc \
     --dep-cc=emcc \
     --nm="llvm-nm -g" \
+    --ar=emar \
     --ranlib=emranlib \
     --enable-cross-compile \
     --target-os=none \
@@ -88,6 +109,7 @@ if [ ! -f config.mak ]; then
     --enable-demuxers \
     --enable-avcodec \
     --enable-avformat \
+    --enable-swresample \
     --disable-network \
     --disable-d3d11va \
     --disable-dxva2 \
@@ -100,9 +122,10 @@ if [ ! -f config.mak ]; then
     --disable-lzma \
     --disable-sdl2 \
     --disable-xlib
+  echo "$CONFIG_REVISION" > .config-revision
 fi
 
-JOBS=$(nproc 2> /dev/null || echo 4)
+JOBS=${JOBS:-$(nproc 2> /dev/null || echo 4)}
 [ "$JOBS" -gt 8 ] && JOBS=8
 emmake make -j"$JOBS"
 
@@ -111,7 +134,8 @@ EXPORTS='["_decoder", "_decoder_open", "_decoder_pull", "_decoder_seek", "_decod
 link_full() {
   emcc -O3 -msimd128 \
     -I. \
-    -Llibavcodec -Llibavformat -Llibavutil -lavformat -lavcodec -lavutil \
+    -Llibavcodec -Llibavformat -Llibswresample -Llibavutil \
+    -lavformat -lavcodec -lswresample -lavutil \
     -o "$BUILD/decoder.js" "$SRC/decoder.c" \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORTED_FUNCTIONS="$EXPORTS" \
@@ -125,7 +149,8 @@ link_without_binaryen() {
   emcc -O3 -msimd128 -I. -c "$SRC/decoder.c" -o "$BUILD/decoder.o"
   emcc -O0 \
     "$BUILD/decoder.o" \
-    -Llibavcodec -Llibavformat -Llibavutil -lavformat -lavcodec -lavutil \
+    -Llibavcodec -Llibavformat -Llibswresample -Llibavutil \
+    -lavformat -lavcodec -lswresample -lavutil \
     -o "$BUILD/decoder.js" \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORTED_FUNCTIONS="$EXPORTS" \
