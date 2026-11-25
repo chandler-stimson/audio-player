@@ -2,6 +2,7 @@
 
 const form = document.getElementById('preferences');
 const status = document.getElementById('status');
+const widthInput = document.getElementById('width');
 const heightInput = document.getElementById('height');
 const extendedHeightInput = document.getElementById('extended-height');
 
@@ -14,6 +15,8 @@ const rememberId = n => n === 0 ? 'remember-none' : 'remember-' + n;
    and the player page read the same keys and the same defaults */
 const read = async () => {
   const prefs = await chrome.storage.local.get({
+    // the same default width as the worker's DEFAULT_WIDTH
+    width: 600,
     height: 120,
     'extended-height': 600,
     'extended-view': false,
@@ -21,6 +24,7 @@ const read = async () => {
     'skip-period': 10
   });
 
+  widthInput.value = prefs.width;
   heightInput.value = prefs.height;
   extendedHeightInput.value = prefs['extended-height'];
   document.getElementById('open-player-current').checked = prefs['extended-view'] === false;
@@ -58,6 +62,7 @@ form.addEventListener('submit', async e => {
     return;
   }
 
+  const width = Number(widthInput.value);
   const height = Number(heightInput.value);
   const extendedHeight = Number(extendedHeightInput.value);
   if (extendedHeight < height) {
@@ -74,6 +79,7 @@ form.addEventListener('submit', async e => {
 
   try {
     await chrome.storage.local.set({
+      width,
       height,
       'extended-height': extendedHeight,
       'extended-view': extendedView,

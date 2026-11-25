@@ -1,3 +1,7 @@
+/* the width of a newly opened player; the options page can store a wider
+   or narrower choice that overrides this default */
+const DEFAULT_WIDTH = 600;
+
 const click = (extra = '') => {
   chrome.runtime.sendMessage({
     method: 'ping'
@@ -10,8 +14,7 @@ const click = (extra = '') => {
           'extended-view': false,
           height: 120,
           'extended-height': 600,
-          width: 500,
-          left: win.left + Math.round((win.width - 500) / 2)
+          width: DEFAULT_WIDTH
         }, prefs => {
           const extended = prefs['extended-view'];
           /* the extended view is never shorter than the normal view, even
@@ -19,6 +22,10 @@ const click = (extra = '') => {
           const height = extended ?
             Math.max(prefs['extended-height'], prefs.height) :
             prefs.height;
+
+          /* the selected width centers the window inside the current
+             browser window */
+          const left = win.left + Math.round((win.width - prefs.width) / 2);
 
           /* the selected height centers the window inside the current
              browser window; a height taller than the browser window stays
@@ -28,7 +35,7 @@ const click = (extra = '') => {
           chrome.windows.create({
             width: prefs.width,
             height,
-            left: prefs.left,
+            left,
             top,
             url: 'data/player/index.html' + (extra ? '?' + extra : ''),
             type: 'popup'
