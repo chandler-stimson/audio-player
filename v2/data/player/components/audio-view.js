@@ -933,6 +933,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
           this.#scheduleRun();
         }
         this.#maintain();
+        // the restored playhead is reported too: a reporter that already
+        // showed the failed target must learn the fallback
+        this.dispatchEvent(new Event('timeupdate'));
         return;
       }
       if (e.message !== 'CANCELED') {
@@ -1067,9 +1070,12 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       }
     }
     // the play loop writes the label only while playing; a seek shows where
-    // the playhead went right away (a paused scrub updates it too)
+    // the playhead went right away (a paused scrub updates it too), and the
+    // reporters of the playback learn the new playhead while the track is
+    // paused as well (the play loop only reports while it runs)
     if (this.stream || this.audioBuffer) {
       this.shadowRoot.getElementById('current').textContent = htime(this.currentTime);
+      this.dispatchEvent(new Event('timeupdate'));
     }
   }
   get volume() {

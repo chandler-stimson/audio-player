@@ -248,7 +248,7 @@ const run = async () => {
   if (world.seekCalls.length !== seeksMid) {
     throw Error('the seek to the end asked the decoder');
   }
-  if (world.events.slice(eventsMid).join(',') !== 'pause,ended') {
+  if (world.events.slice(eventsMid).join(',') !== 'pause,ended,timeupdate') {
     throw Error('the seek to the end produced ' + JSON.stringify(world.events.slice(eventsMid)));
   }
   const genAtEnd = el.stream.gen;

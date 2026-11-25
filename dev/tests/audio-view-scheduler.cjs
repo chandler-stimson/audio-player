@@ -310,7 +310,7 @@ const run = async () => {
   if (Math.abs(el.currentTime - 60) > 0.01) {
     throw Error('the seek to the end left the position at ' + el.currentTime);
   }
-  if (world.events.slice(endFrom).join(',') !== 'pause,ended') {
+  if (world.events.slice(endFrom).join(',') !== 'pause,ended,timeupdate') {
     throw Error('the seek to the end produced ' + JSON.stringify(world.events.slice(endFrom)));
   }
   if (!el.stream.done || world.scheduled.length) {
