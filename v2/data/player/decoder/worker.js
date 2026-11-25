@@ -552,7 +552,20 @@ const cmdOpen = async msg => {
   let exhausted = false;
 
   for (const [head, tail] of LADDER) {
-    await preRead(session, head, tail).catch(() => {});
+    try {
+      await preRead(session, head, tail);
+    }
+    catch (e) {
+      // the probe failed (an expired URL, a dropped connection, an
+      // unreadable file): its own reason must surface, not a misleading
+      // decoder error from an input that never delivered its bytes; no
+      // decoder_open ran on this rung, so there is no decoder state to close
+      if (input.cancel) {
+        input.cancel();
+      }
+      current = null;
+      throw e;
+    }
 
     const rc = api.open();
     if (rc === 0) {

@@ -137,6 +137,10 @@ const get = (href, progress, limit) => {
   }
   else {
     return fetch(href).then(response => {
+      // an HTTP failure is not media; its body must never reach the decoder
+      if (!response.ok) {
+        throw Error('HTTP_' + response.status);
+      }
       const contentLength = response.headers.get('Content-Length');
       const total = parseInt(contentLength, 10);
       let loaded = 0;

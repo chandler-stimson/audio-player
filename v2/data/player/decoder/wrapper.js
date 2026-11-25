@@ -207,7 +207,13 @@
     running[owner] = job;
 
     Promise.resolve(job.arrayBuffer || (job.kind !== 'session' && job.href ?
-      fetch(job.href).then(r => r.arrayBuffer()) : null)).then(ab => {
+      fetch(job.href).then(r => {
+        // an HTTP failure is not media; its body must never reach the decoder
+        if (!r.ok) {
+          throw Error('HTTP_' + r.status);
+        }
+        return r.arrayBuffer();
+      }) : null)).then(ab => {
       if (cache[job.id] !== job) {
         // canceled while the input was being fetched; only the job that
         // still owns the slot may release it

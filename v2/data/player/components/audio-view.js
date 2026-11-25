@@ -307,7 +307,16 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       const parent = this.shadowRoot.getElementById('parent');
       if (!arrayBuffer) {
         if (this.getAttribute('src')) {
-          arrayBuffer = await fetch(this.getAttribute('src')).then(r => r.arrayBuffer());
+          const response = await fetch(this.getAttribute('src'));
+          // an HTTP failure is not media; report it like a failed decode
+          if (!response.ok) {
+            parent.setAttribute('mode', 'nosrc');
+            this.reset();
+            return this.dispatchEvent(new CustomEvent('error', {
+              detail: 'HTTP_' + response.status
+            }));
+          }
+          arrayBuffer = await response.arrayBuffer();
         }
       }
       if (!arrayBuffer) {
