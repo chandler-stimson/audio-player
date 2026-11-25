@@ -5,7 +5,7 @@ const status = document.getElementById('status');
 const heightInput = document.getElementById('height');
 const extendedHeightInput = document.getElementById('extended-height');
 
-const REMEMBER_CHOICES = [10, 20, 30, 0];
+const REMEMBER_CHOICES = [10, 30, 60, 0];
 const SKIP_CHOICES = ['5', '10', '30', '60', '1/60', '1/30', '1/10'];
 
 const rememberId = n => n === 0 ? 'remember-none' : 'remember-' + n;
@@ -17,7 +17,7 @@ const read = async () => {
     height: 120,
     'extended-height': 600,
     'extended-view': false,
-    'remember-tracks': 10,
+    'remember-tracks': 30,
     'skip-period': 10
   });
 
@@ -27,7 +27,7 @@ const read = async () => {
   document.getElementById('open-player-extended').checked = prefs['extended-view'] === true;
 
   const remember = REMEMBER_CHOICES.includes(prefs['remember-tracks']) ?
-    prefs['remember-tracks'] : 10;
+    prefs['remember-tracks'] : 30;
   for (const n of REMEMBER_CHOICES) {
     document.getElementById(rememberId(n)).checked = n === remember;
   }
@@ -69,7 +69,7 @@ form.addEventListener('submit', async e => {
 
   const extendedView = document.getElementById('open-player-extended').checked;
   const remember = REMEMBER_CHOICES.find(n =>
-    document.getElementById(rememberId(n)).checked) ?? 10;
+    document.getElementById(rememberId(n)).checked) ?? 30;
   const skip = document.getElementById('skip-period').value;
 
   try {

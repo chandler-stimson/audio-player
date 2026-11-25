@@ -89,9 +89,16 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
 // context menu
 {
   const once = async () => {
+    // the 20-track choice is no longer offered; map an old stored choice to
+    // the new default so that the menus and the player agree on the value
+    const migrated = await chrome.storage.local.get({'remember-tracks': 30});
+    if (migrated['remember-tracks'] === 20) {
+      await chrome.storage.local.set({'remember-tracks': 30});
+    }
+
     const prefs = await chrome.storage.local.get({
       'extended-view': false,
-      'remember-tracks': 10,
+      'remember-tracks': 30,
       'skip-period': 10
     });
 
@@ -155,7 +162,7 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
         contexts: ['action'],
         title: 'Remember Tracks'
       }, () => chrome.runtime.lastError);
-      for (const c of [10, 20, 30]) {
+      for (const c of [10, 30, 60]) {
         chrome.contextMenus.create({
           id: 'remember-' + c,
           parentId: 'settings-remember',

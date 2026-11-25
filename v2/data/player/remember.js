@@ -140,7 +140,7 @@ remember.save = files => {
 remember.persist = async files => {
   try {
     const prefs = await chrome.storage.local.get({
-      'remember-tracks': 10
+      'remember-tracks': 30
     });
     if (prefs['remember-tracks'] === 0) {
       return; // the user asked not to remember any tracks
@@ -208,7 +208,7 @@ remember.current = file => {
 remember.restore = async () => {
   try {
     const prefs = await chrome.storage.local.get({
-      'remember-tracks': 10
+      'remember-tracks': 30
     });
     if (prefs['remember-tracks'] === 0) {
       /* the sweep is a change like any other, so it runs under the lock;
