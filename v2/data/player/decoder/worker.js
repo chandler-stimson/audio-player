@@ -127,6 +127,16 @@ const READAHEAD = {
    (its index granularity); this many bytes are pre-read around it */
 const SEEK_BACK = 8 * 1024 * 1024;
 
+/* how many bytes of the input end are pre-read on the first seek; the
+   deferred seek index of a matroska input (its cues) sits there and is
+   parsed during that seek, so its bytes must be in the feed at that
+   moment (the parse seeks the decoder to the cues and back). A later
+   seek reuses the built index and reads nothing */
+const SEEK_TAIL = {
+  file: 8 * 1024 * 1024,
+  href: 2 * 1024 * 1024
+};
+
 /* the number of decoded seconds that one posted chunk carries */
 const CHUNK_SECONDS = 1;
 
@@ -248,8 +258,11 @@ const makeFeed = input => ({
   cursor: 0,
   // a sequential download cannot re-read a byte: everything it delivered is
   // retained so that the demuxer can seek back. A range-capable download
-  // re-fetches on demand, so its regions are spent like those of a file
-  retain: input.kind === 'href' && !input.ranges,
+  // re-fetches on demand, so its regions are spent like those of a file. A
+  // posted buffer is kept whole anyway: its regions are views into the same
+  // bytes, so retaining them lets any later parse (the deferred cues of a
+  // matroska input) find its position without a fresh read
+  retain: input.kind === 'href' && !input.ranges || input.kind === 'buffer',
 
   reset() {
     // the retained regions of a sequential download are the only copy of
@@ -471,12 +484,34 @@ const makeSession = (msg, input) => {
         this.feed.eofAt(this.feed.cursor) === false;
     },
 
+    /* the bytes of the input end that the first seek needs (the deferred
+       cues of a matroska input sit there); a no-op once they were read */
+    async ensureTail() {
+      if (this.tailRead) {
+        return;
+      }
+      this.tailRead = true;
+      const input = this.input;
+      const from = Math.max(0, input.size - SEEK_TAIL[input.kind]);
+      if (from < input.size) {
+        const region = await input.readAt(from, input.size - from);
+        if (region) {
+          this.feed.add(region);
+        }
+      }
+    },
+
     async resync() {
       // a demuxer that ran into a local end-of-stream latch recovers by
       // seeking back to where its samples continue; the seek clears the
       // latch and the refilled cursor serves the reads again
       this.resyncs += 1;
       this.expectedPos = this.covered;
+      if (this.input.kind === 'file' ||
+          (this.input.kind === 'href' && this.input.ranges)) {
+        // the recovery seek may parse the deferred cues (the seek index)
+        await this.ensureTail();
+      }
       api.seek(this.covered + this.seekBase());
     }
   };
@@ -691,6 +726,10 @@ const cmdSeek = async msg => {
 
   if (session.input.kind === 'file' ||
       (session.input.kind === 'href' && session.input.ranges)) {
+    // the deferred cues of a matroska input are parsed by this very seek
+    // and sit at the end of the input
+    await session.ensureTail();
+
     // pre-read around the byte position that the target lands on so that
     // the probing reads of the demuxer are served synchronously
     const bytesPerSecond = session.duration && session.input.size > 0 ?

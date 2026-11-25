@@ -86,6 +86,7 @@ A policy must explain local preference and playlist storage, permission-gated lo
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
 | 0.2.7 | 2026-11-25 | Keep Previous available for restarting the first or only readable track, including restored and shortened playlists. | Draft |
+| 0.2.7 | 2026-11-25 | Fix seeking in large Matroska (MKV/WebM) files whose seek index belongs to the video track: the playback no longer stops mid-file after a seek and Play resumes correctly. | Draft |
 
 ## Review Notes
 

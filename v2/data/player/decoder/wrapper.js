@@ -299,7 +299,7 @@
 
   window.decoder = {
     versions: {
-      core: '0.2.1',
+      core: '0.2.2',
       ffmpeg: 'n4.0.2'
     },
     context: sharedContext,

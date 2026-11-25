@@ -542,12 +542,47 @@ int decoder_seek(double seconds) {
        original 0.1.2-derived code passed microseconds there and landed far
        off for most containers); the demuxer timestamps of the stream also
        start at `start_time`, not at zero */
-    const AVStream *st = formatCtx->streams[audioStreamIndex];
     const int64_t base = (formatCtx->start_time != AV_NOPTS_VALUE) ?
         formatCtx->start_time : 0;
     const int64_t target = base + (int64_t)(seconds * AV_TIME_BASE);
+
+    /* Some containers keep their seek index for one stream only (the cues
+       of a matroska file often reference the video track, while the player
+       demuxes the first audio one). The demuxer also grows an index of its
+       own from every keyframe it reads, so the audio stream carries sparse
+       entries that cover only what was decoded so far; a seek through them
+       lands at the last decoded position and makes ffmpeg parse the input
+       forward from there (or fall back to a search that lands far away from
+       the target and reports a false end of stream). The demuxer seeks to
+       the closest entry at or below the target, so the stream to seek
+       through is the one whose such entry is the closest to the target: the
+       audio stream while its index reaches the playhead (the normal case),
+       the video stream with its complete cues otherwise. */
+    int seekIndex = audioStreamIndex;
+    {
+        int64_t bestBack = -1;
+        for (int i = 0; i < formatCtx->nb_streams; ++i) {
+            AVStream *st2 = formatCtx->streams[i];
+            if (st2->nb_index_entries == 0) {
+                continue;
+            }
+            const int64_t ts2 = av_rescale_q(target, AV_TIME_BASE_Q, st2->time_base);
+            const int at = av_index_search_timestamp(st2, ts2, AVSEEK_FLAG_BACKWARD);
+            if (at < 0) {
+                continue; // the index starts after the target
+            }
+            const int64_t back = av_rescale_q(ts2 - st2->index_entries[at].timestamp,
+                st2->time_base, AV_TIME_BASE_Q);
+            if (bestBack == -1 || back < bestBack) {
+                bestBack = back;
+                seekIndex = i;
+            }
+        }
+    }
+
+    const AVStream *st = formatCtx->streams[seekIndex];
     const int64_t ts = av_rescale_q(target, AV_TIME_BASE_Q, st->time_base);
-    if (avformat_seek_file(formatCtx, audioStreamIndex,
+    if (avformat_seek_file(formatCtx, seekIndex,
             INT64_MIN, ts, INT64_MAX, 0) < 0) {
         return -1;
     }
