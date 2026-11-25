@@ -79,7 +79,10 @@ class SimpleListView extends HTMLElement {
           border: none;
           outline: none;
           width: 100%;
-          height: fit-content;
+          /* the native control needs two rows for a single item to stay a
+             list box; its height still follows the real number of items so
+             the extra native row cannot create a scrollbar */
+          height: calc(var(--height) * var(--rows, 0));
           padding: 0;
           background-color: transparent;
           overflow: hidden;
@@ -177,6 +180,9 @@ class SimpleListView extends HTMLElement {
     // a native select renders as a drop-down box when `size` is 1 even with
     // `multiple` set; a list box needs at least two rows to stay interactive
     this.#select.size = (n === 1) ? 2 : n;
+    /* the visible height follows the real row count; the extra row of the
+       two-row workaround stays inside the clipped native control */
+    this.#parent.style.setProperty('--rows', n);
     this.setAttribute('size', this.#select.size);
   }
   option(parts, name, value, selected = false) {

@@ -141,13 +141,6 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     this.skipPeriod = 10;
   }
   connectedCallback() {
-    // prevent open dialog to open on dblclick; the volume view retargets
-    // the clicks of its inner svg to its host, so the guard must catch it
-    this.shadowRoot.addEventListener('dblclick', e => {
-      if (e.target.closest('button, #volume')) {
-        e.stopPropagation();
-      }
-    });
     // progress
     const progress = this.shadowRoot.getElementById('progress');
     progress.addEventListener('seek', e => {

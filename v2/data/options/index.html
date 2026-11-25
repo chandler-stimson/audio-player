@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Audio Player Options</title>
+  <link rel="stylesheet" type="text/css" href="index.css">
+</head>
+<body>
+  <main>
+    <form id="preferences" aria-labelledby="title">
+      <h1 id="title">Audio Player Preferences</h1>
+
+      <fieldset>
+        <legend>Player window</legend>
+
+        <div class="field">
+          <label for="height">Player height in pixels (minimum 120)</label>
+          <input type="number" id="height" name="height" min="120" step="1" inputmode="numeric" enterkeyhint="next" required>
+        </div>
+
+        <div class="field">
+          <label for="extended-height">Extended player height in pixels</label>
+          <input type="number" id="extended-height" name="extended-height" min="120" step="1" inputmode="numeric" enterkeyhint="done" aria-describedby="extended-height-rule" required>
+          <span id="extended-height-rule">Must be at least the player height.</span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Open player in</legend>
+
+        <div class="choices">
+          <label>
+            <input type="radio" id="open-player-current" name="open-player" value="current" checked>
+            <span>Compact Mode</span>
+          </label>
+          <label>
+            <input type="radio" id="open-player-extended" name="open-player" value="extended">
+            <span>Extended View</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Remember tracks</legend>
+
+        <div class="choices">
+          <label>
+            <input type="radio" id="remember-10" name="remember-tracks" value="10" checked>
+            <span>Remember Last 10 Tracks</span>
+          </label>
+          <label>
+            <input type="radio" id="remember-20" name="remember-tracks" value="20">
+            <span>Remember Last 20 Tracks</span>
+          </label>
+          <label>
+            <input type="radio" id="remember-30" name="remember-tracks" value="30">
+            <span>Remember Last 30 Tracks</span>
+          </label>
+          <label>
+            <input type="radio" id="remember-none" name="remember-tracks" value="0">
+            <span>Do Not Remember Tracks</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Skip period</legend>
+
+        <div class="field">
+          <label for="skip-period">Forward and backward skip</label>
+          <select id="skip-period" name="skip-period" required>
+            <option value="5">Skip 5 Seconds</option>
+            <option value="10">Skip 10 Seconds</option>
+            <option value="30">Skip 30 Seconds</option>
+            <option value="60">Skip 60 Seconds</option>
+            <option value="1/60">Skip 1/60 of Length</option>
+            <option value="1/30">Skip 1/30 of Length</option>
+            <option value="1/10">Skip 1/10 of Length</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <button type="submit">Save Preferences</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+  </main>
+
+  <script type="text/javascript" src="index.js"></script>
+</body>
+</html>

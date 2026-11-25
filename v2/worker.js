@@ -7,13 +7,29 @@ const click = (extra = '') => {
     if (a === undefined) {
       chrome.windows.getCurrent(win => {
         chrome.storage.local.get({
-          width: 500,
+          'extended-view': false,
           height: 120,
-          left: win.left + Math.round((win.width - 500) / 2),
-          top: win.top + Math.round((win.height - 80) / 2)
+          'extended-height': 600,
+          width: 500,
+          left: win.left + Math.round((win.width - 500) / 2)
         }, prefs => {
+          const extended = prefs['extended-view'];
+          /* the extended view is never shorter than the normal view, even
+             when an old or damaged preference says otherwise */
+          const height = extended ?
+            Math.max(prefs['extended-height'], prefs.height) :
+            prefs.height;
+
+          /* the selected height centers the window inside the current
+             browser window; a height taller than the browser window stays
+             at its top instead of moving off-screen */
+          const top = Math.max(win.top, win.top + Math.round((win.height - height) / 2));
+
           chrome.windows.create({
-            ...prefs,
+            width: prefs.width,
+            height,
+            left: prefs.left,
+            top,
             url: 'data/player/index.html' + (extra ? '?' + extra : ''),
             type: 'popup'
           });
@@ -40,12 +56,27 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
       focused: true
     });
   }
+  else if (request.method === 'expand') {
+    // the compact player asks for the height of the extended view
+    response(true);
+    (async () => {
+      const prefs = await chrome.storage.local.get({
+        height: 120,
+        'extended-height': 600
+      });
+      await chrome.windows.update(sender.tab.windowId, {
+        // the extended view can never be shorter than the normal view
+        height: Math.max(prefs['extended-height'], prefs.height)
+      });
+    })().catch(e => console.warn('CANNOT_EXPAND_PLAYER', e));
+  }
 });
 
 // context menu
 {
   const once = async () => {
     const prefs = await chrome.storage.local.get({
+      'extended-view': false,
       'remember-tracks': 10,
       'skip-period': 10
     });
@@ -72,16 +103,48 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
         ].map(a => '*://*/*.' + a)
       }, () => chrome.runtime.lastError);
 
-      // settings for the tracks that the player remembers between sessions
+      // every preference that the toolbar action menu can change
       chrome.contextMenus.create({
         id: 'settings',
         contexts: ['action'],
         title: 'Settings'
       }, () => chrome.runtime.lastError);
+
+      // the mode of the window that a new player opens in
+      chrome.contextMenus.create({
+        id: 'open-player',
+        parentId: 'settings',
+        contexts: ['action'],
+        title: 'Open Player'
+      }, () => chrome.runtime.lastError);
+      chrome.contextMenus.create({
+        id: 'open-player-current',
+        parentId: 'open-player',
+        contexts: ['action'],
+        title: 'Compact Mode',
+        type: 'radio',
+        checked: prefs['extended-view'] === false
+      }, () => chrome.runtime.lastError);
+      chrome.contextMenus.create({
+        id: 'open-player-extended',
+        parentId: 'open-player',
+        contexts: ['action'],
+        title: 'Extended View',
+        type: 'radio',
+        checked: prefs['extended-view'] === true
+      }, () => chrome.runtime.lastError);
+
+      // settings for the tracks that the player remembers between sessions
+      chrome.contextMenus.create({
+        id: 'settings-remember',
+        parentId: 'settings',
+        contexts: ['action'],
+        title: 'Remember Tracks'
+      }, () => chrome.runtime.lastError);
       for (const c of [10, 20, 30]) {
         chrome.contextMenus.create({
           id: 'remember-' + c,
-          parentId: 'settings',
+          parentId: 'settings-remember',
           contexts: ['action'],
           title: 'Remember Last ' + c + ' Tracks',
           type: 'radio',
@@ -90,25 +153,24 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
       }
       chrome.contextMenus.create({
         id: 'remember-none',
-        parentId: 'settings',
+        parentId: 'settings-remember',
         contexts: ['action'],
         title: 'Do Not Remember Tracks',
         type: 'radio',
         checked: prefs['remember-tracks'] === 0
       }, () => chrome.runtime.lastError);
 
-      // settings for the size of the forward and backward skips of the
-      // player; the separator keeps the two radio groups apart
+      // settings for the size of the forward and backward skips of the player
       chrome.contextMenus.create({
-        id: 'settings-separator',
+        id: 'settings-skip',
         parentId: 'settings',
         contexts: ['action'],
-        type: 'separator'
+        title: 'Skip Period'
       }, () => chrome.runtime.lastError);
       for (const s of [5, 10, 30, 60]) {
         chrome.contextMenus.create({
           id: 'skip-' + s,
-          parentId: 'settings',
+          parentId: 'settings-skip',
           contexts: ['action'],
           title: 'Skip ' + s + ' Seconds',
           type: 'radio',
@@ -119,7 +181,7 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
       for (const f of [60, 30, 10]) {
         chrome.contextMenus.create({
           id: 'skip-1/' + f,
-          parentId: 'settings',
+          parentId: 'settings-skip',
           contexts: ['action'],
           title: 'Skip 1/' + f + ' of Length',
           type: 'radio',
@@ -130,6 +192,16 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
   };
   chrome.runtime.onInstalled.addListener(once);
   chrome.runtime.onStartup.addListener(once);
+
+  /* the options page writes the same preferences; rebuild the menus so
+     their radio checkmarks cannot fall behind the stored choices */
+  chrome.storage.onChanged.addListener((prefs, area) => {
+    if (area === 'local' && (
+      prefs['extended-view'] || prefs['remember-tracks'] || prefs['skip-period']
+    )) {
+      once();
+    }
+  });
 }
 
 /* two records describe the same track when they point to the same link or
@@ -232,6 +304,15 @@ const enforce = async n => {
   }
 };
 
+/* the options page and the context menu both write the preference; shrinking
+   the remembered tracks from either place keeps the stored history in sync */
+chrome.storage.onChanged.addListener((prefs, area) => {
+  const change = prefs['remember-tracks'];
+  if (area === 'local' && change && change.newValue !== undefined) {
+    enforce(change.newValue);
+  }
+});
+
 const send = jobs => chrome.runtime.sendMessage({
   method: 'jobs',
   jobs
@@ -255,13 +336,18 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       url: 'https://webbrowsertools.com/audio-test/'
     });
   }
+  else if (info.menuItemId === 'open-player-current' || info.menuItemId === 'open-player-extended') {
+    // the choice only sets the mode of the windows opened afterwards
+    chrome.storage.local.set({
+      'extended-view': info.menuItemId === 'open-player-extended'
+    });
+  }
   else if (info.menuItemId.startsWith('remember-')) {
     const n = info.menuItemId === 'remember-none' ? 0 :
       Number(info.menuItemId.replace('remember-', ''));
     chrome.storage.local.set({
       'remember-tracks': n
     });
-    enforce(n);
   }
   else if (info.menuItemId.startsWith('skip-')) {
     const v = info.menuItemId.replace('skip-', '');

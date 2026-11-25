@@ -37,6 +37,35 @@ audio-view:focus-visible { /* stylelint-disable-line selector-type-no-unknown */
 #playlist {
   flex: 1;
   overflow: auto;
+  position: relative;
+  scrollbar-width: thin;
+}
+
+/* the selected option paints the whole row; padding the exposed row keeps
+   its text away from the edge without padding the overlay as well */
+#view::part(row) {
+  box-sizing: border-box;
+  padding-inline: 8px;
+}
+
+/* the instruction that replaces an empty list; it never blocks the
+   right-click menu or the drag-and-drop target of the playlist */
+#playlist-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  text-align: center;
+  color: #70757a;
+  pointer-events: none;
+}
+#playlist-empty[hidden] {
+  display: none;
+}
+#playlist-empty strong {
+  color: #4d5156;
+  font-size: 14px;
 }
 
 /* the invisible anchor that follows the cursor of a right-click */
@@ -227,8 +256,27 @@ dialog button:focus-visible {
 
 #flex {
   flex: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+/* the inline action that grows the compact window to the extended view */
+#flex button {
+  border: none;
+  background-color: transparent;
+  font: inherit;
+  color: #1a73e8;
+  padding: 0;
+  min-block-size: 24px;
+  cursor: pointer;
+}
+#flex button:hover {
+  text-decoration: underline;
+}
+#flex button:focus-visible {
+  outline: 2px solid #4285f4;
+  outline-offset: 2px;
 }
 
 #repeat[mode=repeat-one] path:last-child {

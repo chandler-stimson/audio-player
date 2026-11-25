@@ -22,6 +22,10 @@
   "background": {
     "service_worker": "worker.js"
   },
+  "options_ui": {
+    "page": "/data/options/index.html",
+    "open_in_tab": true
+  },
   "offline_enabled": true,
   "action": {},
   "content_security_policy": {

@@ -160,6 +160,7 @@ const makePlayerWorld = () => {
   };
 
   const onMessageListeners = [];
+  const sentMessages = [];
   const chrome = {
     storage: {
       local: {
@@ -173,7 +174,12 @@ const makePlayerWorld = () => {
       onMessage: {
         addListener: fn => onMessageListeners.push(fn)
       },
-      sendMessage() {},
+      sendMessage(message, callback) {
+        sentMessages.push(message);
+        if (callback) {
+          callback(true);
+        }
+      },
       lastError: null
     }
   };
@@ -407,6 +413,7 @@ const makePlayerWorld = () => {
     document,
     drag,
     remember,
+    sentMessages,
     gates: {makeGate},
 
     makeHandle,

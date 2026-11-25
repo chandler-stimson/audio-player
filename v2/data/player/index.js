@@ -12,6 +12,14 @@ Object.defineProperty(audio, 'file', {
 const next = document.getElementById('next');
 const previous = document.getElementById('previous');
 
+/* the placeholder explains an empty playlist; every mutation that changes the
+   number of tracks calls this so the instruction cannot fall behind */
+const playlistEmpty = document.getElementById('playlist-empty');
+const updatePlaylistEmpty = () => {
+  playlistEmpty.hidden = Boolean(audio.files && audio.files.length);
+};
+updatePlaylistEmpty();
+
 /* the volume of the last session; a missing entry reads as null, which the
    numeric test alone would otherwise treat as a stored zero */
 {
@@ -55,6 +63,14 @@ chrome.storage.onChanged.addListener((prefs, area) => {
   if (area === 'local' && prefs['skip-period']) {
     applySkip(prefs['skip-period'].newValue);
   }
+});
+
+/* the inline shortcut of the compact view; the browser owns the window, so
+   the worker is the one that changes its height */
+document.getElementById('expand').addEventListener('click', () => {
+  chrome.runtime.sendMessage({
+    method: 'expand'
+  }, () => chrome.runtime.lastError);
 });
 
 const title = (msg = '') => {
@@ -1060,6 +1076,7 @@ audio.focus();
     view.clear();
     audio.files = null;
     audio.i = 0;
+    updatePlaylistEmpty();
 
     stopped();
 
@@ -1191,6 +1208,7 @@ const removeAt = (index, silent = false) => {
   const view = document.getElementById('view');
   view.removeIndex(index + 1); // the view counts the hidden header row
   audio.files.splice(index, 1);
+  updatePlaylistEmpty();
 
   // the track must not come back on the next launch
   remember.remove(file);
@@ -1303,6 +1321,7 @@ const addTracks = async files => {
       {name: file.href || 'Local File'}
     ], file.name, n, false).insert();
   }
+  updatePlaylistEmpty();
 
   /* remember the newly added tracks (best effort; never blocks the
      playback); the save is queued before the play below queues the first of
@@ -1409,6 +1428,7 @@ const restored = remember.restore().then(({files, index}) => {
         };
       }
     }
+    updatePlaylistEmpty();
 
     // the remembered playing track is the current one; the last restored
     // track is the fallback when it is not restorable anymore

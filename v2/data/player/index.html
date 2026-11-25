@@ -8,13 +8,17 @@
   <audio controls id="dummy" src="silence.mp3" loop></audio>
   <div id="extra">
     <div id="playlist">
+      <div id="playlist-empty" hidden>
+        <strong>Playlist is empty</strong>
+        <span>Drop audio or video files here, or click the Browse button to add tracks.</span>
+      </div>
       <list-view drag="false" headers="false" id="view">
         <span width="1fr">Title</span>
         <span width="2fr">Link</span>
       </list-view>
     </div>
   </div>
-  <span id="flex">Increase the height to see the Playlist</span>
+  <span id="flex">Increase the height or <button type="button" id="expand" aria-label="click here to see the Playlist">click here</button> to see the Playlist</span>
   <audio-view id="audio" tabindex="0" role="group" aria-label="Playback controls">
     <button type="button" id="next" slot="before-stat" disabled aria-label="Move Next (Ctrl/Command + Shift + N)" title="Move Next (Ctrl/Command + Shift + N)">
       <svg width="24" viewBox="0 0 48 48" aria-hidden="true">
