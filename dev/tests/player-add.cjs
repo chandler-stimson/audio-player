@@ -305,8 +305,8 @@ const unlockInteraction = async () => {
   }
   const previous = world.document.getElementById('previous');
   const next = world.document.getElementById('next');
-  if (previous.disabled !== true || next.disabled !== true) {
-    throw Error('the navigation buttons did not follow the shorter playlist');
+  if (previous.disabled !== false || next.disabled !== true) {
+    throw Error('Previous did not stay available to restart the only track');
   }
   if (world.document.title !== '[1/1] other.mp3 :: Audio Player') {
     throw Error('the title did not follow the shorter playlist');

@@ -85,6 +85,13 @@ const title = (msg = '') => {
   }
 };
 
+/* Previous also restarts the selected track, so playlist position alone must
+   not disable it; a locked track has no readable source yet */
+const updatePrevious = () => {
+  const file = audio.file;
+  previous.disabled = !file || Boolean(file.locked);
+};
+
 /* the inline report of a track that cannot be played; a failed decode stops
    the playback and its reason stays in the report until the user dismisses
    it or another track starts */
@@ -371,7 +378,7 @@ const play = () => {
 
   document.getElementById('view').selectedIndex = i + 1;
 
-  previous.disabled = i === 0;
+  updatePrevious();
   next.disabled = i >= audio.files.length - 1;
 
   const file = audio.file;
@@ -1171,7 +1178,7 @@ const stopped = () => {
   // the play button must stay usable for the tracks that are left
   const parent = audio.shadowRoot.getElementById('parent');
   parent.setAttribute('mode', (audio.files && audio.files.length) ? 'play' : 'nosrc');
-  previous.disabled = (audio.i || 0) === 0;
+  updatePrevious();
   next.disabled = true;
   title();
 };
@@ -1243,7 +1250,7 @@ const removeAt = (index, silent = false) => {
     }
     // the selection and navigation buttons follow the shifted playlist
     view.selectedIndex = (audio.i || 0) + 1;
-    previous.disabled = (audio.i || 0) === 0;
+    updatePrevious();
     next.disabled = (audio.i || 0) >= audio.files.length - 1;
     title();
   }
@@ -1432,6 +1439,7 @@ const restored = remember.restore().then(({files, index}) => {
     // track is the fallback when it is not restorable anymore
     audio.i = index === -1 ? audio.files.length - 1 : index;
     view.selectedIndex = audio.i + 1;
+    updatePrevious();
     title();
 
     // the play button of the audio view is disabled while no source is

@@ -195,6 +195,7 @@ const makePlayerWorld = () => {
     source: null,
     ready: false,
     audioBuffer: null,
+    currentTime: 0,
     session: 0,
     started: [],
     listeners: {},
@@ -307,7 +308,12 @@ const makePlayerWorld = () => {
     activeElement: null,
     getElementById(id) {
       if (elements.has(id) === false) {
-        elements.set(id, id === 'audio' ? audio : (id === 'view' ? view : makeElement(id)));
+        const el = id === 'audio' ? audio : (id === 'view' ? view : makeElement(id));
+        // the real page ships both navigation buttons disabled
+        if (id === 'previous' || id === 'next') {
+          el.disabled = true;
+        }
+        elements.set(id, el);
       }
       return elements.get(id);
     },
