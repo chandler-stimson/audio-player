@@ -562,7 +562,6 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
       sources: [],
       nextPos: 0,
       endTime: when,
-      sound: null,
       nextChunk: null
     };
     this.#scheduleChunk(run, hit.chunk, when, hit.offset);
@@ -583,13 +582,9 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     const source = context.createBufferSource();
     source.buffer = chunk.buffer;
 
-    if (!run.sound) {
-      const sound = run.sound = context.createGain();
-      sound.gain.value = this.volume;
-      sound.connect(context.destination);
-      this.sound = sound;
-    }
-    source.connect(run.sound);
+    // every source of the chain plays through the single persistent gain
+    // node of the element; it is never disconnected between runs
+    source.connect(this.#soundNode(context));
     source.start(when, offset);
 
     if (run.sources.length === 0) {
@@ -658,9 +653,6 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
         source.onended = null;
         source.disconnect();
         source.stop();
-      }
-      if (run.sound) {
-        run.sound.disconnect();
       }
     }
   }
@@ -964,6 +956,19 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     this.dispatchEvent(new Event('loadedmetadata'));
     this.start();
   }
+  /* the single gain node of the element: it stays connected to the
+     destination for the lifetime of the shared context, so pauses,
+     seeks and track changes reuse it instead of stacking a new node on
+     the destination graph; a different context instance is the only
+     reason to rebuild it */
+  #soundNode(context) {
+    if (!this.sound || this.sound.context !== context) {
+      const sound = this.sound = context.createGain();
+      sound.gain.value = this.volume;
+      sound.connect(context.destination);
+    }
+    return this.sound;
+  }
   start() {
     const {context, audioBuffer} = this;
     const source = this.source = context.createBufferSource();
@@ -982,11 +987,7 @@ Use Meta + Arrow Up/Down to seek 30%"></volume-view>
     source.buffer = audioBuffer;
     this.shadowRoot.getElementById('duration').textContent = htime(audioBuffer.duration);
 
-    const sound = this.sound = context.createGain();
-    sound.gain.value = this.volume;
-
-    sound.connect(context.destination);
-    source.connect(sound);
+    source.connect(this.#soundNode(context));
 
     // the resume position; a fully consumed buffer restarts from the beginning.
     // NOTE: `this.currentTime` cannot be used here; with the shared context
