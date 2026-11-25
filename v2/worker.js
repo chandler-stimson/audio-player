@@ -48,23 +48,37 @@ chrome.runtime.onMessage.addListener((request, sender, response) => {
     // the answer keeps the promise of the fire-and-forget sender from
     // rejecting; the focus updates below still run on their own
     response(true);
+    /* the player page passes the ID of its own window because extension
+       pages do not report a sender.tab; a player hosted in a tab falls
+       back to the window of that tab */
     const tab = sender.tab;
-    chrome.tabs.update(tab.id, {
-      selected: true
-    });
-    chrome.windows.update(tab.windowId, {
-      focused: true
-    });
+    const windowId = request.windowId !== undefined ?
+      request.windowId : tab && tab.windowId;
+    if (windowId !== undefined) {
+      if (tab && tab.id !== undefined) {
+        chrome.tabs.update(tab.id, {
+          selected: true
+        });
+      }
+      chrome.windows.update(windowId, {
+        focused: true
+      });
+    }
   }
   else if (request.method === 'expand') {
     // the compact player asks for the height of the extended view
     response(true);
+    const windowId = request.windowId !== undefined ?
+      request.windowId : sender.tab && sender.tab.windowId;
+    if (windowId === undefined) {
+      return;
+    }
     (async () => {
       const prefs = await chrome.storage.local.get({
         height: 120,
         'extended-height': 600
       });
-      await chrome.windows.update(sender.tab.windowId, {
+      await chrome.windows.update(windowId, {
         // the extended view can never be shorter than the normal view
         height: Math.max(prefs['extended-height'], prefs.height)
       });

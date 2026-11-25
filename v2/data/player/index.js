@@ -65,11 +65,18 @@ chrome.storage.onChanged.addListener((prefs, area) => {
   }
 });
 
+/* the ID of the window that hosts this player; it travels with every
+   message to the worker because an extension page has no sender.tab for
+   the worker to read the window from; the lookup happens on every send so
+   that a player hosted in a tab reports the tab's current window */
+const hostWindow = () => chrome.windows.getCurrent().then(w => w.id);
+
 /* the inline shortcut of the compact view; the browser owns the window, so
    the worker is the one that changes its height */
-document.getElementById('expand').addEventListener('click', () => {
+document.getElementById('expand').addEventListener('click', async () => {
   chrome.runtime.sendMessage({
-    method: 'expand'
+    method: 'expand',
+    windowId: await hostWindow()
   }, () => chrome.runtime.lastError);
 });
 
@@ -1374,21 +1381,23 @@ const elect = job => navigator.locks.request('player', {
 
 chrome.runtime.onMessage.addListener((request, sender, response) => {
   if (request.method === 'jobs') {
-    elect(() => {
+    elect(async () => {
       add(request.jobs);
       response(true);
       chrome.runtime.sendMessage({
-        method: 'bring-to-front'
+        method: 'bring-to-front',
+        windowId: await hostWindow()
       }, () => chrome.runtime.lastError);
     });
     // the elected copy answers asynchronously
     return true;
   }
   else if (request.method === 'ping') {
-    elect(() => {
+    elect(async () => {
       response('pong');
       chrome.runtime.sendMessage({
-        method: 'bring-to-front'
+        method: 'bring-to-front',
+        windowId: await hostWindow()
       }, () => chrome.runtime.lastError);
     });
     return true;
