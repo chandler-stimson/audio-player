@@ -33,11 +33,11 @@ audio.addEventListener('timeupdate', positionState);
 // the paused player freezes its position at the exact value
 audio.addEventListener('pause', positionState);
 
-audio.addEventListener('play', () => {
-  d.play();
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title: audio.file.name
-  });
+/* the media session mirrors the navigation buttons of the page; the page
+   calls this on every change of their state, so the controls of the OS
+   follow the bounds of the playlist (the first track has no previous one
+   and the last track has no next one) */
+const sessionActions = () => {
   const previous = document.getElementById('previous');
   navigator.mediaSession.setActionHandler('previoustrack', previous.disabled ? null : () => {
     previous.dispatchEvent(new Event('click'));
@@ -46,6 +46,14 @@ audio.addEventListener('play', () => {
   navigator.mediaSession.setActionHandler('nexttrack', next.disabled ? null : () => {
     next.dispatchEvent(new Event('click'));
   });
+};
+
+audio.addEventListener('play', () => {
+  d.play();
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: audio.file.name
+  });
+  sessionActions();
 });
 audio.addEventListener('pause', () => {
   d.pause();

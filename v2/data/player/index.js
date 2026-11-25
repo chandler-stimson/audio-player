@@ -104,11 +104,18 @@ const title = (msg = '') => {
   }
 };
 
-/* Previous also restarts the selected track, so playlist position alone must
-   not disable it; a locked track has no readable source yet */
-const updatePrevious = () => {
+/* the navigation buttons follow the bounds of the playlist: the first track
+   has no previous one and the last track has no next one; a locked track has
+   no readable source yet. The media session of the OS mirrors the same
+   buttons, so its action handlers are refreshed here as well (session.js
+   defines the refresh; it loads after this script) */
+const updateNavigation = () => {
   const file = audio.file;
-  previous.disabled = !file || Boolean(file.locked);
+  previous.disabled = !file || Boolean(file.locked) || (audio.i || 0) === 0;
+  next.disabled = !file || (audio.i || 0) >= audio.files.length - 1;
+  if (typeof sessionActions === 'function') {
+    sessionActions();
+  }
 };
 
 /* the inline report of a track that cannot be played; a failed decode stops
@@ -451,8 +458,7 @@ const play = () => {
 
   document.getElementById('view').selectedIndex = i + 1;
 
-  updatePrevious();
-  next.disabled = i >= audio.files.length - 1;
+  updateNavigation();
 
   const file = audio.file;
   if (!file) {
@@ -1258,8 +1264,7 @@ const stopped = () => {
   // the play button must stay usable for the tracks that are left
   const parent = audio.shadowRoot.getElementById('parent');
   parent.setAttribute('mode', (audio.files && audio.files.length) ? 'play' : 'nosrc');
-  updatePrevious();
-  next.disabled = true;
+  updateNavigation();
   title();
 };
 
@@ -1330,8 +1335,7 @@ const removeAt = (index, silent = false) => {
     }
     // the selection and navigation buttons follow the shifted playlist
     view.selectedIndex = (audio.i || 0) + 1;
-    updatePrevious();
-    next.disabled = (audio.i || 0) >= audio.files.length - 1;
+    updateNavigation();
     title();
   }
 };
@@ -1521,7 +1525,7 @@ const restored = remember.restore().then(({files, index}) => {
     // track is the fallback when it is not restorable anymore
     audio.i = index === -1 ? audio.files.length - 1 : index;
     view.selectedIndex = audio.i + 1;
-    updatePrevious();
+    updateNavigation();
     title();
 
     // the play button of the audio view is disabled while no source is
