@@ -21,6 +21,8 @@ class SimpleListView extends HTMLElement {
   #header;
   #parent;
   #select;
+  #size = 0;
+  #observer;
 
   static version = '0.2.1';
 
@@ -147,16 +149,13 @@ class SimpleListView extends HTMLElement {
   #scrollIntoViewIfNeeded() {
     const e = this.#select.options[this.#select.selectedIndex];
     if (e) {
-      // e.scrollIntoViewIfNeeded(false);
+      // the first track also normalizes the view to the very top
       if (this.#select.options[1] && this.#select.options[1].selected) {
         this.#parent.scrollTop = 0;
       }
-      else if (e.offsetTop < this.#parent.scrollTop) {
-        e.scrollIntoView(true);
-      }
-      else if (e.offsetTop + e.offsetHeight > this.#parent.scrollTop + this.#parent.offsetHeight) {
-        e.scrollIntoView(false);
-      }
+      // scroll every scrollable ancestor (the select, #parent and the
+      // playlist container of the host page) just enough to reveal the row
+      e.scrollIntoView({block: 'nearest'});
     }
   }
   #resize() {
@@ -268,6 +267,15 @@ class SimpleListView extends HTMLElement {
 
       this.#emit(this, 'change');
     });
+    // the list can be hidden while the selection moves on; once it is
+    // measurable again, bring the selected row back into the viewport
+    this.#observer ??= new ResizeObserver(([{contentRect}]) => {
+      if (this.#size === 0 && contentRect.height) {
+        this.#scrollIntoViewIfNeeded();
+      }
+      this.#size = contentRect.height;
+    });
+    this.#observer.observe(this);
     // resize
     this.#slots('both').forEach(e => this.#watch(e));
     // focus
